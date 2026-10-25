@@ -108,9 +108,11 @@ export async function startDashboard(opts: DashboardOptions): Promise<DashboardS
   function addToDemo(d: Demo, item: Item) {
     if (d.seen.has(item.id) || d.events.length >= MAX_DEMO_EVENTS) return;
     d.seen.add(item.id);
-    // Backfilled events are older than the last one: keep the feed in arrival order.
+    // Keep the feed in the order things happened: polled service events reach the dashboard later than
+    // the agent's own notes, so arrival order would put a scenario's result before its bank decisions.
+    const after = (x: Item) => x.ts > item.ts || (x.ts === item.ts && x.id > item.id);
     let i = d.events.length;
-    while (i > 0 && d.events[i - 1].id > item.id) i--;
+    while (i > 0 && after(d.events[i - 1])) i--;
     d.events.splice(i, 0, item);
     const line = `id: ${item.id}\ndata: ${JSON.stringify(item)}\n\n`;
     for (const c of d.clients) c.write(line);
