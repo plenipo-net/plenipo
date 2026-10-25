@@ -13,7 +13,7 @@ Plenipo gives AI agents the same thing, with one difference: the powers are neve
 Every mandate has a scope, limits and an expiry, every sub-delegation can only narrow it,
 and the person can revoke it at any time.
 
-> Status: 0.4.0, experimental. The cryptography is real; wallets, PID providers and banks in
+> Status: 0.4, experimental. The cryptography is real; wallets, PID providers and banks in
 > the examples and the sandbox are test doubles. The code went through two rounds of security review
 > by independent AI review agents, and their findings are fixed (see [CHANGELOG.md](CHANGELOG.md)); it
 > has not yet been audited by an external security firm. Do not use it to protect real money or real
