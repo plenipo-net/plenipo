@@ -31,7 +31,7 @@ matter of registering the type, not of changing the protocol.
 
 | Wallet | Status (October 2026) | What to do |
 | --- | --- | --- |
-| walt.id wallet | Transaction data types are configurable through transaction data profiles. | Add a profile for `plenipo_mandate` with a display template for the mandate fields. |
+| walt.id Wallet API 2 | Transaction data types are configurable through transaction data profiles. | **Works.** With the profile in `sandbox/level2/waltid/config`, Wallet API 2 (`stable`, October 2026) approved a `plenipo_mandate` and the bank enforced it, end to end, on 25 October 2026 (`sandbox/level2/README.md`). |
 | EUDI reference wallet (Android wallet core) | Transaction data for SD-JWT VC presentations was merged on the `release/0.31.0` branch in September 2026. It is opt-in: the wallet declares the types it accepts, and the documented example is `QES_APPROVAL`. | Check in the code whether custom types can be declared; if they can, declare `plenipo_mandate` in a fork of the reference app and render the mandate on the consent screen. If not, propose the type upstream. |
 | IT-Wallet (app IO) | No public support for custom transaction data types. | Needs agreement with the scheme operator; see the roadmap. |
 

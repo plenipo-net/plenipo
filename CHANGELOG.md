@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- First run with a real wallet: walt.id Wallet API 2 approved a `plenipo_mandate` over OpenID4VP and
+  the sandbox bank enforced it (`sandbox/level2/README.md`).
+- `sandbox/level2/waltid`: the override for walt.id's own stack is now `waltid-stack.override.yaml`, so
+  `docker compose up` in that folder no longer loads it by mistake.
+
 ## 0.4.1 (25 October 2026)
 
 Documentation and release process only; the library code is unchanged from 0.4.0.
