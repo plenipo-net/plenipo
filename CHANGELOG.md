@@ -7,6 +7,15 @@
   bound to the PID (`WALTID_EMANDATE=1`).
 - `sandbox/level2/waltid`: the override for walt.id's own stack is now `waltid-stack.override.yaml`, so
   `docker compose up` in that folder no longer loads it by mistake.
+- Sandbox, hosted remote MCP: with `SANDBOX_AGENT_GATEWAY=1` the bridge is also served over Streamable
+  HTTP, one bridge per MCP session, so Claude can connect to the sandbox by URL. Each session has a
+  demo code; the dashboard serves that session's events at `/api/demo/<code>` (JSON and SSE, readable
+  from any origin) and shows it alone at `/demo/<code>`. The gateway can also run the scripted
+  scenarios on request, each under its own code.
+- Sandbox, hosting: a front door that dispatches by host name on one port (`src/front.ts`), a Fly.io
+  configuration (`sandbox/deploy/fly.toml`), a daily clean restart and a play-money refill for a public
+  instance. Bank payment and card events now carry the mandate id. When `SANDBOX_ADMIN_TOKEN` is set,
+  posting dashboard events requires it.
 
 ## 0.4.1 (25 October 2026)
 

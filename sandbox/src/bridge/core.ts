@@ -59,9 +59,15 @@ export interface BridgeConfig {
   bankUrl: string;
   /** Optional: narrative events for the sandbox dashboard. */
   dashboardUrl?: string;
+  /** Bearer token for posting to the dashboard, when it requires one. */
+  dashboardToken?: string;
   store: BridgeStateStore;
   /** Where to log; must not be stdout for the stdio bridge. */
   log?: (line: string) => void;
+  /** Fields added to every dashboard event, e.g. the demo code of a hosted session. */
+  noteFields?: Record<string, unknown>;
+  /** A line appended to the request_mandate answer, e.g. where to watch the session live. */
+  demoHint?: string;
 }
 
 export interface ToolText {
@@ -137,13 +143,14 @@ export class BridgeCore {
     return json as T;
   }
 
-  private async note(type: string, data: Record<string, unknown>): Promise<void> {
+  /** Posts a narrative event to the dashboard, if one is configured. Never throws. */
+  async note(type: string, data: Record<string, unknown>): Promise<void> {
     if (!this.config.dashboardUrl) return;
     try {
       await fetch(`${this.config.dashboardUrl}/api/agent-events`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ type, ...data }),
+        headers: { 'content-type': 'application/json', ...(this.config.dashboardToken ? { authorization: `Bearer ${this.config.dashboardToken}` } : {}) },
+        body: JSON.stringify({ type, ...data, ...this.config.noteFields }),
         signal: AbortSignal.timeout(2000),
       });
     } catch {
@@ -195,13 +202,14 @@ export class BridgeCore {
     });
     state.pending = { requestId: req.request_id, mandateId: req.mandate_id, walletUrl: req.wallet_url, authorizationUrl: req.authorization_url, createdAt: new Date().toISOString() };
     await this.config.store.save(state);
-    await this.note('note', { text: `Claude asked for a mandate: ${input.purpose}` });
+    await this.note('note', { text: `Claude asked for a mandate: ${input.purpose}`, request_id: req.request_id, mandate_id: req.mandate_id });
     const link = req.wallet_url ?? req.authorization_url;
     return {
       text:
         `Mandate requested. The person must now approve it in their wallet. Ask them to open this link (it shows exactly what you will be allowed to do) and approve:\n\n${link}\n\n` +
         `A phone wallet can scan the QR code at ${this.config.platformUrl}/requests/${req.request_id}. ` +
-        'After they approve, call mandate_status. Do not try to pay before the mandate is active.',
+        'After they approve, call mandate_status. Do not try to pay before the mandate is active.' +
+        (this.config.demoHint ? `\n\n${this.config.demoHint}` : ''),
       data: {
         request_id: req.request_id,
         mandate_id: req.mandate_id,
@@ -239,7 +247,7 @@ export class BridgeCore {
       state.mandate = { id: m.id, chain: m.chain, mandate: m.mandate, approvedAt: new Date().toISOString() };
       delete state.pending;
       await this.config.store.save(state);
-      await this.note('note', { text: 'The person approved the mandate; Claude can act at the bank' });
+      await this.note('note', { text: 'The person approved the mandate; Claude can act at the bank', mandate_id: m.id });
     }
     if (!state.mandate) return { isError: true, text: 'No mandate yet. Call request_mandate first.', data: { state: 'none' } };
     const info = await this.http<{ state: string; principal: Record<string, unknown> }>('GET', `/api/mandates/${encodeURIComponent(state.mandate.id)}`).catch(() => undefined);
@@ -261,7 +269,7 @@ export class BridgeCore {
     const id = state.mandate?.id ?? state.pending?.mandateId;
     if (!state.mandate) return { isError: true, text: 'There is no approved mandate to revoke.' };
     await this.http('POST', `/api/mandates/${encodeURIComponent(id!)}/revoke`, {});
-    await this.note('note', { text: 'Claude revoked its own mandate' });
+    await this.note('note', { text: 'Claude revoked its own mandate', mandate_id: id });
     return { text: `Mandate ${id} revoked at the platform. The bank will refuse further calls under it as soon as its status cache refreshes (a few seconds).` };
   }
 
@@ -339,7 +347,7 @@ export class BridgeCore {
     });
     const inv = peekInvocation(invocation);
     const summary = { action: inv.action, counterparty: inv.counterparty, amount: inv.amount, aud: inv.aud, nonce: inv.nonce, chain_hash: inv.chain_hash ?? chainHash(chain) };
-    await this.note('tool_call', { tool: name, args });
+    await this.note('tool_call', { tool: name, args, mandate_id: state.mandate.id });
     let text: string;
     let isError: boolean;
     let data: Record<string, unknown> | undefined;
@@ -357,6 +365,13 @@ export class BridgeCore {
     const deny = (data?.plenipo as { decision?: string; code?: string } | undefined)?.decision === 'DENY' ? (data!.plenipo as { code: string }).code : undefined;
     await record({ args, invocation: summary, decision: deny ? 'DENY' : isError ? 'ERROR' : 'ALLOW', code: deny ?? (isError ? String(data?.error ?? '') || undefined : undefined), text });
     this.log(`${name}: ${deny ? `DENY ${deny}` : isError ? 'error' : 'ALLOW'}`);
+    await this.note('tool_result', {
+      tool: name,
+      mandate_id: state.mandate.id,
+      decision: deny ? 'DENY' : isError ? 'ERROR' : 'ALLOW',
+      ...(deny ? { code: deny, why: DENY_EXPLANATIONS[deny] } : {}),
+      text: text.slice(0, 300),
+    });
     return { text, isError, data };
   }
 

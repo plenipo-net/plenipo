@@ -95,11 +95,15 @@ function apply(e) {
     if (t === 'note') story(e, e.text);
     if (t === 'payment_unknown_outcome') story(e, 'Core banking timed out paying ' + eur(e.amount.value) + ' to ' + e.payee + ': outcome unknown, the reservation stays pending', 'fail');
     if (t === 'reservations') { state.unresolved = e.unresolved || []; if (e.swept) story(e, 'Ledger sweep: ' + e.swept + ' reservation(s) left pending past their TTL now count as spent until reconciled', 'fail'); }
+    if (t === 'account_refilled') story(e, 'Play money: the account of ' + e.person + ' is back to ' + eur(e.balance_after));
     if (t === 'reservation_reconciled') story(e, 'Reservation ' + short(e.reservation) + ' reconciled as ' + e.outcome + ' (' + e.state + ')');
   } else if (src === 'agent') {
     if (t === 'scenario_start') story(e, '▶ ' + e.title, 'scenario');
     if (t === 'scenario_result') story(e, (e.pass ? 'PASS ' : 'FAIL ') + e.title + (e.observed ? ' · ' + e.observed : ''), e.pass ? 'pass' : 'fail');
     if (t === 'llm_text') story(e, '🤖 ' + e.text);
+    if (t === 'session_started') story(e, e.text, 'scenario');
+    if (t === 'session_closed') story(e, 'The remote agent session ended (' + e.reason + ')');
+    if (t === 'tool_result' && e.decision === 'DENY') story(e, 'The bank refused ' + e.tool + ': ' + (e.why || e.code), 'fail');
     if (t === 'tool_call') story(e, 'Agent calls ' + e.tool + ' ' + JSON.stringify(e.args || {}));
     if (t === 'note') story(e, e.text);
   }
@@ -186,7 +190,11 @@ async function config() {
   } catch {}
 }
 config(); setInterval(config, 3000);
-const es = new EventSource('/stream');
+// /demo/<code> shows one hosted MCP session only.
+const parts = location.pathname.split('/');
+const demo = parts[1] === 'demo' && parts[2] ? parts[2].toUpperCase() : '';
+if (demo) { document.title = 'Plenipo Sandbox · session ' + demo; $('.sub').textContent = 'One remote agent session, demo code ' + demo + '. Every step, live.'; }
+const es = new EventSource(demo ? '/api/demo/' + encodeURIComponent(demo) + '/stream' : '/stream');
 es.onmessage = (m) => { try { apply(JSON.parse(m.data)); render(); } catch (e) { console.error(e); } };
 render();
 `;

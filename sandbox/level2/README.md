@@ -239,6 +239,26 @@ so the client_id is `x509_san_dns:platform.<domain>`), the sandbox wallet runs i
 `SANDBOX_ADMIN_TOKEN`. Inside the container the bank still fetches status lists from the local
 services, so the public host is not on the verification path.
 
+### On Fly.io
+
+`deploy/fly.toml` runs the same image as one Fly machine. Fly terminates TLS; inside, the front door
+(`src/front.ts`, port 8080) dispatches by host name to the services and to the hosted MCP gateway
+(`mcp.<domain>`). No Caddy, no certificate to manage on the machine.
+
+```bash
+fly apps create plenipo-sandbox
+fly secrets set --app plenipo-sandbox SANDBOX_ADMIN_TOKEN=$(openssl rand -hex 24) SANDBOX_MCP_TOKEN=$(openssl rand -hex 16)
+fly deploy --config sandbox/deploy/fly.toml --dockerfile sandbox/deploy/Dockerfile --ha=false   # from the repository root
+for h in sandbox pid.sandbox wallet.sandbox platform.sandbox bank.sandbox mcp.sandbox; do
+  fly certs add --app plenipo-sandbox $h.plenipo.net
+done
+```
+
+DNS: a CNAME for each of those names to `plenipo-sandbox.fly.dev` (or A/AAAA records to the app's
+IPs from `fly ips list`). The remote MCP URL is `https://mcp.sandbox.plenipo.net/mcp/<SANDBOX_MCP_TOKEN>`;
+rotate the token with `fly secrets set` if it is abused. Keep one machine: the state is in memory, and
+`SANDBOX_RESTART_AT` restarts it clean every night.
+
 To run agents and scenarios against the public sandbox, open a shell in the container
 (`docker compose exec sandbox sh`) and use `npm run scenarios -- --attach` or `npm run agent`
 there: the container already has `SANDBOX_ADMIN_TOKEN` and `PLENIPO_BANK_HOST`. The sandbox wallet

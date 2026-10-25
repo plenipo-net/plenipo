@@ -25,6 +25,7 @@ const core = new BridgeCore({
   platformUrl: base('PLENIPO_PLATFORM_URL', 4403),
   bankUrl: base('PLENIPO_BANK_URL', 4404),
   dashboardUrl: process.env.PLENIPO_DASHBOARD_URL === '' ? undefined : base('PLENIPO_DASHBOARD_URL', 4400),
+  dashboardToken: process.env.PLENIPO_DASHBOARD_TOKEN || undefined,
   store: new FileStateStore(statePath),
   log,
 });

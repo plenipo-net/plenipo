@@ -1,0 +1,57 @@
+# The public sandbox on Fly.io: one machine, TLS at the Fly edge, the front door on port 8080 dispatching
+# by host name. From the repository root:
+#   fly deploy --config sandbox/deploy/fly.toml --dockerfile sandbox/deploy/Dockerfile --ha=false
+# Secrets (fly secrets set ...): SANDBOX_ADMIN_TOKEN, SANDBOX_MCP_TOKEN, optionally SANDBOX_DEMO_LOGIN=user:password.
+# Everything is in memory and the sandbox restarts clean every night: keep exactly one machine.
+app = "plenipo-sandbox"
+primary_region = "fra"
+
+[env]
+  NODE_ENV = "production"
+  SANDBOX_HOST = "127.0.0.1"
+  SANDBOX_FRONT_HOST = "0.0.0.0"
+  SANDBOX_FRONT_PORT = "8080"
+  SANDBOX_DOMAIN = "sandbox.plenipo.net"
+  SANDBOX_AGENT_GATEWAY = "1"
+  SANDBOX_PUBLIC_SCENARIOS = "1"
+  SANDBOX_REFILL_SECONDS = "600"
+  SANDBOX_CLIENT_IP_HEADER = "fly-client-ip"
+  SANDBOX_RESTART_AT = "03:30"
+  SANDBOX_STRICT_CLIENT_ID = "1"
+  SANDBOX_STATUS_CACHE_SECONDS = "5"
+  PLENIPO_PID_ISSUER = "https://pid.sandbox.plenipo.net"
+  PLENIPO_PLATFORM_ORIGIN = "https://platform.sandbox.plenipo.net"
+  PLENIPO_BANK_HOST = "bank.sandbox.plenipo.net"
+  SANDBOX_PUBLIC_URL_DASHBOARD = "https://sandbox.plenipo.net"
+  SANDBOX_PUBLIC_URL_PID = "https://pid.sandbox.plenipo.net"
+  SANDBOX_PUBLIC_URL_WALLET = "https://wallet.sandbox.plenipo.net"
+  SANDBOX_PUBLIC_URL_PLATFORM = "https://platform.sandbox.plenipo.net"
+  SANDBOX_PUBLIC_URL_BANK = "https://bank.sandbox.plenipo.net"
+  SANDBOX_PUBLIC_URL_AGENT = "https://mcp.sandbox.plenipo.net"
+  # Where the request_mandate answer sends the person to watch the session live; the code is appended as ?code=.
+  # Without it the link is the sandbox dashboard at /demo/<code>.
+  # SANDBOX_WATCH_URL = "https://demo.plenipo.net/live"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # State lives in memory: the machine must not be stopped when idle.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "connections"
+    soft_limit = 800
+    hard_limit = 1000
+
+  [[http_service.checks]]
+    grace_period = "30s"
+    interval = "30s"
+    timeout = "5s"
+    method = "GET"
+    path = "/healthz"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

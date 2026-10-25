@@ -2,7 +2,7 @@
  * Sandbox configuration. Level 1 runs everything on 127.0.0.1 with test identities under
  * `*.sandbox.plenipo.test`; level 2 sets the PLENIPO_* variables to real public names (see level2/).
  */
-export type ServiceName = 'dashboard' | 'pid' | 'wallet' | 'platform' | 'bank';
+export type ServiceName = 'dashboard' | 'pid' | 'wallet' | 'platform' | 'bank' | 'agent';
 
 export interface Identities {
   /** `iss` of the PIDs, and origin of the PID status list. Must be https: verifiers fetch status over https only. */
@@ -32,6 +32,28 @@ export interface SandboxOptions {
   stores?: import('./services/stores.js').StoreOptions;
   /** How often the bank sweeps a shared ledger, in seconds. */
   sweepSeconds?: number;
+  /** Public sandbox: how often drained accounts get their opening balance back. */
+  refillSeconds?: number;
+  /** The hosted MCP gateway for remote agents (port `agent`). Off unless set. */
+  agentGateway?: AgentGatewaySettings;
+}
+
+export interface AgentGatewaySettings {
+  /** Secret path segment: the endpoint is /mcp/<token>. Without it the endpoint is /mcp. */
+  token?: string;
+  /** Page where a person watches a session live; the demo code is appended as ?code=. */
+  watchUrl?: string;
+  maxSessions?: number;
+  /** Close a session after this long without requests, in seconds. */
+  idleSeconds?: number;
+  /** New sessions one client address may open per hour. */
+  sessionsPerHour?: number;
+  /** Requests one client address may send per minute. */
+  requestsPerMinute?: number;
+  /** Header carrying the client address set by the proxy in front, e.g. fly-client-ip. */
+  clientIpHeader?: string;
+  /** Let visitors run the scripted scenarios through the gateway (GET /scenarios, POST /scenarios/<id>/run). */
+  publicScenarios?: boolean;
 }
 
 export const DEFAULT_IDENTITIES: Identities = {
@@ -46,6 +68,7 @@ export const DEFAULT_PORTS: Record<ServiceName, number> = {
   wallet: 4402,
   platform: 4403,
   bank: 4404,
+  agent: 4405,
 };
 
 function envPort(name: ServiceName, base: number | undefined): number | undefined {
@@ -79,6 +102,18 @@ export function optionsFromEnv(env = process.env): SandboxOptions {
     adminToken: env.SANDBOX_ADMIN_TOKEN || undefined,
     strictClientId: env.SANDBOX_STRICT_CLIENT_ID === '1',
     verbose: env.SANDBOX_VERBOSE === '1',
+    refillSeconds: env.SANDBOX_REFILL_SECONDS ? Number(env.SANDBOX_REFILL_SECONDS) : undefined,
+    agentGateway:
+      env.SANDBOX_AGENT_GATEWAY === '1'
+        ? {
+            token: env.SANDBOX_MCP_TOKEN || undefined,
+            watchUrl: env.SANDBOX_WATCH_URL || undefined,
+            maxSessions: env.SANDBOX_MAX_SESSIONS ? Number(env.SANDBOX_MAX_SESSIONS) : undefined,
+            idleSeconds: env.SANDBOX_SESSION_IDLE_SECONDS ? Number(env.SANDBOX_SESSION_IDLE_SECONDS) : undefined,
+            clientIpHeader: env.SANDBOX_CLIENT_IP_HEADER || undefined,
+            publicScenarios: env.SANDBOX_PUBLIC_SCENARIOS === '1',
+          }
+        : undefined,
   };
 }
 

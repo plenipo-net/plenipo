@@ -15,6 +15,10 @@ export interface SandboxEndpoints {
   wallet: string;
   bank: string;
   dashboard?: string;
+  /** Bearer token for posting dashboard events, when the dashboard requires one. */
+  dashboardToken?: string;
+  /** Fields added to every dashboard event, e.g. the demo code of a public scenario run. */
+  noteFields?: Record<string, unknown>;
 }
 
 export interface CallOutcome {
@@ -70,8 +74,8 @@ export class SandboxAgentClient {
     try {
       await fetch(`${this.endpoints.dashboard}/api/agent-events`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ type, ...data }),
+        headers: { 'content-type': 'application/json', ...(this.endpoints.dashboardToken ? { authorization: `Bearer ${this.endpoints.dashboardToken}` } : {}) },
+        body: JSON.stringify({ type, ...data, ...this.endpoints.noteFields }),
         signal: AbortSignal.timeout(3000),
       });
     } catch {
@@ -97,10 +101,13 @@ export class SandboxAgentClient {
           purpose: input.spec!.purpose,
           ...extra,
         };
-    return this.post<{ request_id: string; mandate_id: string; request_uri: string; authorization_url: string; wallet_url?: string; state: string }>(
+    const r = await this.post<{ request_id: string; mandate_id: string; request_uri: string; authorization_url: string; wallet_url?: string; state: string }>(
       `${this.endpoints.platform}/api/requests`,
       body,
     );
+    // A tagged run (a public scenario) names its ids so the dashboard can follow them into its feed.
+    if (this.endpoints.noteFields) await this.note('mandate_request_sent', { request_id: r.request_id, mandate_id: r.mandate_id, agent: input.agentName });
+    return r;
   }
 
   /** Plays the person: the wallet fetches the request and the person approves or refuses it. */

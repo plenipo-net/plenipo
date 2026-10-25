@@ -38,7 +38,7 @@ Without a key, the scripted agent shows the same flows deterministically:
 const o = optionsFromEnv();
 const host = o.host ?? '127.0.0.1';
 const url = (n: keyof typeof DEFAULT_PORTS) => `http://${host}:${o.ports?.[n] ?? DEFAULT_PORTS[n]}`;
-const client = new SandboxAgentClient({ platform: url('platform'), wallet: url('wallet'), bank: url('bank'), dashboard: url('dashboard') });
+const client = new SandboxAgentClient({ platform: url('platform'), wallet: url('wallet'), bank: url('bank'), dashboard: url('dashboard'), dashboardToken: o.adminToken });
 const person = flag('person') ?? 'maria';
 const model = flag('model') ?? process.env.PLENIPO_AGENT_MODEL ?? DEFAULT_MODEL;
 
