@@ -7,11 +7,13 @@
  * running with level2/waltid/config on http://localhost:7006.
  *
  *   npx tsx level2/waltid-e2e.ts
+ *   WALTID_EMANDATE=1 npx tsx level2/waltid-e2e.ts    the same with a TS12 e-mandate (urn:eudi:sca:emandate:1)
  */
 import { exportJWK, generateKeyPair } from 'jose';
 import { SandboxAgentClient } from '../src/agent/client.js';
 import { DEFAULT_PORTS } from '../src/config.js';
 
+const EMANDATE = process.env.WALTID_EMANDATE === '1';
 const WALTID = (process.env.WALTID_URL ?? 'http://localhost:7006').replace(/\/$/, '');
 const local = (n: keyof typeof DEFAULT_PORTS) => `http://127.0.0.1:${process.env[`SANDBOX_PORT_${n.toUpperCase()}`] ?? DEFAULT_PORTS[n]}`;
 const admin: Record<string, string> = process.env.SANDBOX_ADMIN_TOKEN ? { authorization: `Bearer ${process.env.SANDBOX_ADMIN_TOKEN}` } : {};
@@ -53,13 +55,18 @@ console.log(`PID ${issued.pid_id} stored as ${stored.id ?? JSON.stringify(stored
 
 step('3. The agent platform asks for a mandate');
 const client = new SandboxAgentClient({ platform: local('platform'), wallet: local('wallet'), bank: local('bank'), dashboard: local('dashboard') });
-const req = await client.requestMandate({ agentName: 'Bill assistant (walt.id)', preset: 'utilities' });
+const req = await client.requestMandate({ agentName: EMANDATE ? 'Bill assistant (walt.id, TS12)' : 'Bill assistant (walt.id)', preset: 'utilities', emandate: EMANDATE });
+console.log(`transaction data type: ${EMANDATE ? 'urn:eudi:sca:emandate:1 (bound to the PID)' : 'plenipo_mandate'}`);
 console.log(`request_uri ${req.request_uri}\n${req.authorization_url}`);
 
 step('4. walt.id resolves the request and shows the transaction data (preview)');
 const preview = await call('POST', `${WALLET_PATH()}/credentials/present/preview`, { requestUrl: req.authorization_url, keyId });
 console.log(JSON.stringify({ valid: preview.valid, clientId: preview.clientId, error: preview.error, transactionData: preview.transactionData }, null, 2));
 if (!preview.valid) throw new Error('walt.id rejected the request; see the error above');
+const expectedType = EMANDATE ? 'urn:eudi:sca:emandate:1' : 'plenipo_mandate';
+if (!(preview.transactionData ?? []).some((t: { type?: string }) => t.type === expectedType)) {
+  throw new Error(`walt.id did not show transaction data of type ${expectedType}`);
+}
 
 step('5. The person approves: walt.id presents the PID with the mandate hash in the KB-JWT');
 const presented = await call('POST', `${WALLET_PATH()}/credentials/present`, { requestUrl: req.authorization_url, keyId });
@@ -74,7 +81,9 @@ console.log(`${paid.decision}${paid.code ? ' ' + paid.code : ''}: ${paid.text}`)
 const denied = await client.callTool(state.mandate_id, 'transfer', { payee: 'lumen-energia.example', amount_cents: 18000, reference: 'too much' });
 console.log(`${denied.decision}${denied.code ? ' ' + denied.code : ''}: ${denied.text}`);
 await client.close();
-console.log(paid.decision === 'ALLOW' && denied.code === 'LIMIT_PER_OPERATION' ? '\nPASS: walt.id end to end' : '\nFAIL');
+const ok = paid.decision === 'ALLOW' && denied.code === 'LIMIT_PER_OPERATION';
+console.log(ok ? `\nPASS: walt.id end to end (${expectedType})` : '\nFAIL');
+if (!ok) process.exitCode = 1;
 
 function WALLET_PATH() {
   return `${WALTID}/wallet/${walletId}`;
