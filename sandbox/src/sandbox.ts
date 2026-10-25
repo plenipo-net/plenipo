@@ -8,6 +8,7 @@ import type { TrustConfig, TrustedIssuer } from 'plenipo';
 import { PERSONS } from './catalog.js';
 import { DEFAULT_IDENTITIES, DEFAULT_PORTS, type Identities, type SandboxOptions, type ServiceName } from './config.js';
 import { mappedStatusFetcher } from './fetcher.js';
+import { startAgentGateway, type AgentGatewayService } from './services/agent-gateway.js';
 import { startBank, type BankService } from './services/bank.js';
 import { startDashboard, type DashboardService } from './services/dashboard.js';
 import { startPidProvider, type PidProviderService } from './services/pid-provider.js';
@@ -25,6 +26,8 @@ export interface Sandbox {
   platform: PlatformService;
   bank: BankService;
   dashboard: DashboardService;
+  /** The hosted MCP gateway, when options.agentGateway is set. */
+  agentGateway?: AgentGatewayService;
   statusCacheSeconds: number;
   adminToken?: string;
   stores: SandboxStores;
@@ -128,6 +131,7 @@ export async function startSandbox(options: SandboxOptions = {}): Promise<Sandbo
       stores: stores.bank,
       sweepSeconds: options.sweepSeconds,
       adminToken: options.adminToken,
+      refillSeconds: options.refillSeconds,
     });
     started.push(bank);
     log(`bank on ${bank.url}`);
@@ -152,6 +156,7 @@ export async function startSandbox(options: SandboxOptions = {}): Promise<Sandbo
       platform: platform.publicUrl,
       bank: options.publicUrls?.bank ?? bank.url,
       dashboard: '',
+      agent: '',
     };
     const dashboard = await startDashboard({
       host,
@@ -163,12 +168,44 @@ export async function startSandbox(options: SandboxOptions = {}): Promise<Sandbo
         bank: { label: 'Bank', url: publicUrls.bank },
         pid: { label: 'PID provider', url: publicUrls.pid },
       },
+      eventsToken: options.adminToken,
     });
     started.push(dashboard);
     publicUrls.dashboard = options.publicUrls?.dashboard ?? dashboard.url;
 
+    let agentGateway: AgentGatewayService | undefined;
+    if (options.agentGateway) {
+      const { publicScenarios, ...gw } = options.agentGateway;
+      agentGateway = await startAgentGateway({
+        ...gw,
+        scenarios: publicScenarios
+          ? {
+              endpoints: { platform: platform.url, wallet: wallet.url, bank: bank.url, dashboard: dashboard.url, dashboardToken: options.adminToken },
+              env: {
+                bankHost: identities.bankHost,
+                audiences: bank.audiences,
+                urls: { pid: pid.url, bank: bank.url, platform: platform.url, wallet: wallet.url },
+                adminToken: options.adminToken,
+                statusCacheSeconds,
+              },
+            }
+          : undefined,
+        host,
+        port: port('agent'),
+        platformUrl: platform.url,
+        bankUrl: bank.url,
+        dashboardUrl: dashboard.url,
+        dashboardToken: options.adminToken,
+        publicDashboardUrl: publicUrls.dashboard,
+        log,
+      });
+      started.push(agentGateway);
+      publicUrls.agent = options.publicUrls?.agent ?? agentGateway.url;
+      log(`agent gateway on ${agentGateway.url}${agentGateway.mcpPath}`);
+    }
+
     return {
-      urls: { pid: pid.url, wallet: wallet.url, platform: platform.url, bank: bank.url, dashboard: dashboard.url },
+      urls: { pid: pid.url, wallet: wallet.url, platform: platform.url, bank: bank.url, dashboard: dashboard.url, agent: agentGateway?.url ?? '' },
       publicUrls,
       identities,
       pid,
@@ -176,6 +213,7 @@ export async function startSandbox(options: SandboxOptions = {}): Promise<Sandbo
       platform,
       bank,
       dashboard,
+      agentGateway,
       statusCacheSeconds,
       adminToken: options.adminToken,
       stores,

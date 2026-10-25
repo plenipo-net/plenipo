@@ -27,7 +27,7 @@ if (attach) {
   const url = (n: keyof typeof DEFAULT_PORTS) => `http://${host}:${o.ports?.[n] ?? DEFAULT_PORTS[n]}`;
   const bankHost = o.identities?.bankHost ?? DEFAULT_IDENTITIES.bankHost;
   env = {
-    client: new SandboxAgentClient({ platform: url('platform'), wallet: url('wallet'), bank: url('bank'), dashboard: url('dashboard') }),
+    client: new SandboxAgentClient({ platform: url('platform'), wallet: url('wallet'), bank: url('bank'), dashboard: url('dashboard'), dashboardToken: o.adminToken }),
     bankHost,
     audiences: bankAudiences(bankHost),
     urls: { pid: url('pid'), bank: url('bank'), platform: url('platform'), wallet: url('wallet') },
@@ -39,7 +39,7 @@ if (attach) {
   const ports = { dashboard: 0, pid: 0, wallet: 0, platform: 0, bank: 0 };
   sandbox = await startSandbox({ ...optionsFromEnv(), ports, statusCacheSeconds: 1 });
   env = {
-    client: new SandboxAgentClient({ platform: sandbox.urls.platform, wallet: sandbox.urls.wallet, bank: sandbox.urls.bank, dashboard: sandbox.urls.dashboard }),
+    client: new SandboxAgentClient({ platform: sandbox.urls.platform, wallet: sandbox.urls.wallet, bank: sandbox.urls.bank, dashboard: sandbox.urls.dashboard, dashboardToken: sandbox.adminToken }),
     bankHost: sandbox.identities.bankHost,
     audiences: sandbox.bank.audiences,
     urls: sandbox.urls,

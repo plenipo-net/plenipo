@@ -61,14 +61,16 @@ function result(t: ToolText) {
   };
 }
 
-export function createBridgeServer(core: BridgeCore): Server {
+export const BRIDGE_INSTRUCTIONS =
+  'Tools to act at the person\'s bank under a Plenipo mandate. First request_mandate and have the person approve it in their wallet, ' +
+  'then mandate_status, then the bank tools. Never try to work around a DENY: report it to the person.';
+
+export function createBridgeServer(core: BridgeCore, opts: { instructions?: string } = {}): Server {
   const server = new Server(
     { name: 'plenipo-bank', version: '0.1.0' },
     {
       capabilities: { tools: { listChanged: true } },
-      instructions:
-        'Tools to act at the person\'s bank under a Plenipo mandate. First request_mandate and have the person approve it in their wallet, ' +
-        'then mandate_status, then the bank tools. Never try to work around a DENY: report it to the person.',
+      instructions: opts.instructions ?? BRIDGE_INSTRUCTIONS,
     },
   );
 

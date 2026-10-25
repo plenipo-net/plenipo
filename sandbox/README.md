@@ -174,6 +174,37 @@ claude mcp add --transport stdio --scope user plenipo-bank -- "$(command -v node
 A step-by-step guide for macOS, with a guided demo and the prompts to type, is in
 [docs/mac.md](../docs/mac.md).
 
+## Remote MCP (hosted gateway)
+
+With `SANDBOX_AGENT_GATEWAY=1` the sandbox also serves the bridge over Streamable HTTP on port 4405,
+for MCP clients that connect to a URL instead of starting a process (Claude on the web with a custom
+connector, Claude Desktop remote connectors). The endpoint is `/mcp`, or `/mcp/<SANDBOX_MCP_TOKEN>`
+when a token is set.
+
+Every MCP session gets its own bridge: its own agent key, mandate request and mandate, in memory, gone
+when the session closes or stays idle for two hours. Every session also gets a demo code of six
+characters, given to Claude in the server instructions and in the `request_mandate` answer. The
+bridge tags its dashboard events with the code, and the dashboard follows the request and mandate ids
+through the platform, wallet and bank events, so one session can be watched on its own:
+
+| URL on the dashboard | What |
+| --- | --- |
+| `/demo/<code>` | the dashboard page, showing that session only |
+| `/api/demo/<code>` | its events as JSON (`known`, `events`), readable from any origin |
+| `/api/demo/<code>/stream` | the same as Server-Sent Events; a page may open it before the session starts |
+
+With `SANDBOX_PUBLIC_SCENARIOS=1` the gateway also lists the scripted scenarios at `GET /scenarios`
+and runs one on `POST /scenarios/<id>/run` (no body, so a page on another origin can call it without
+a preflight). The answer is `202` with a fresh demo code and its watch link; the run then shows up in
+that code's feed like a Claude session does. The two scenarios that change state every session shares
+(`expired` moves the bank clock, `pid-revoked` revokes a PID) are not offered. Ten runs per hour per
+address, three at a time.
+
+Limits for a public host: at most 200 open sessions (`SANDBOX_MAX_SESSIONS`), 20 new sessions per hour
+and 240 requests per minute from one address (taken from `SANDBOX_CLIENT_IP_HEADER` behind a proxy).
+When `SANDBOX_ADMIN_TOKEN` is set, posting dashboard events needs it, so nobody else can write into a
+session's feed.
+
 ## The LLM agent
 
 ```bash
@@ -222,6 +253,16 @@ the guard checks the invocation against the actual call regardless.
 | `PLENIPO_STORE_PREFIX` | `plenipo_` / `plenipo` | Table or key prefix, to share a server |
 | `SANDBOX_PENDING_TTL_SECONDS` | 900 | How long a reservation may stay pending before the sweep counts it as spent |
 | `ANTHROPIC_API_KEY`, `PLENIPO_AGENT_MODEL` | none, `claude-sonnet-5-5` | LLM agent |
+| `SANDBOX_AGENT_GATEWAY` | off | `1`: serve the hosted MCP gateway on `SANDBOX_PORT_AGENT` (4405) |
+| `SANDBOX_PUBLIC_SCENARIOS` | off | `1`: visitors may run the scripted scenarios through the gateway, each under its own demo code |
+| `SANDBOX_REFILL_SECONDS` | none | Public sandbox: this often, accounts below half their opening balance get it back |
+| `SANDBOX_MCP_TOKEN` | none | Secret path segment of the gateway endpoint: `/mcp/<token>` |
+| `SANDBOX_WATCH_URL` | the dashboard's `/demo/<code>` | Page where a person watches a session; the code is appended as `?code=` |
+| `SANDBOX_MAX_SESSIONS`, `SANDBOX_SESSION_IDLE_SECONDS` | 200, 7200 | Open gateway sessions, and when an idle one is closed |
+| `SANDBOX_CLIENT_IP_HEADER` | none | Header with the client address set by the proxy in front (`fly-client-ip` on Fly.io) |
+| `SANDBOX_DOMAIN`, `SANDBOX_FRONT_PORT`, `SANDBOX_FRONT_HOST` | none, none, `0.0.0.0` | Hosted: one public port dispatching by host name (`src/front.ts`) |
+| `SANDBOX_DEMO_LOGIN` | none | Hosted: `user:password` basic auth in front of everything a wallet, an MCP client or a showcase page does not need |
+| `SANDBOX_RESTART_AT` | none | Hosted: `HH:MM` UTC; the process exits then and the platform restarts it clean |
 
 The identities are https names because verifiers fetch status lists over https only; in level 1 the
 sandbox maps each of them to the local service that serves it (`src/fetcher.ts`, with the same
@@ -235,13 +276,15 @@ src/
   services/                 pid-provider, wallet, platform, bank (+ stores), dashboard
   agent/                    client (platform, wallet, MCP, REST), llm loop, cli
   bridge.ts, bridge/        the MCP bridge for Claude Desktop / Claude Code (core, MCP server, state file)
+  services/agent-gateway.ts the bridge over Streamable HTTP, one per session, with demo codes
+  front.ts                  hosted: one port, dispatch by host name, optional demo login
   scenarios.ts              the scripted scenarios; run-scenarios.ts runs them
   catalog.ts                people, payees, bills, mandate templates
   http.ts, events.ts, fetcher.ts, binding.ts, ui/
-test/                       end-to-end suites: scenarios, bridge over stdio, Postgres and Redis stores
+test/                       end-to-end suites: scenarios, bridge over stdio and over HTTP, front door, Postgres and Redis stores
 scripts/mac-setup.sh        macOS setup (see docs/mac.md)
 level2/                     real wallets (walt.id, EUDI reference wallet) and the public host
-deploy/                     Dockerfile, docker-compose.yml, Caddyfile for a VPS
+deploy/                     Dockerfile; docker-compose.yml and Caddyfile for a VPS; fly.toml for Fly.io
 ```
 
 ## Limits

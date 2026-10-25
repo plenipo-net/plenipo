@@ -67,6 +67,8 @@ export interface BankOptions {
   /** How often the shared ledger's sweep runs, in seconds. Default 10. */
   sweepSeconds?: number;
   adminToken?: string;
+  /** Public sandbox: this often, accounts below half their opening balance get it back and their bills reopen. */
+  refillSeconds?: number;
 }
 
 interface Account {
@@ -224,12 +226,13 @@ export async function startBank(opts: BankOptions): Promise<BankService> {
     return ok({ payees }, lines.join('\n'));
   }
 
-  function transfer(acct: Account, a: { payee: string; amount_cents: number; reference: string }): ToolResult {
+  function transfer(acct: Account, a: { payee: string; amount_cents: number; reference: string }, mandateId?: string): ToolResult {
     if (failNextTransfer && PAYEE_IDS.has(a.payee) && a.amount_cents <= acct.balance) {
       failNextTransfer = false;
       acct.balance -= a.amount_cents;
       acct.transactions.unshift({ at: new Date().toISOString(), payee: a.payee, amount: a.amount_cents, reference: a.reference });
       events.append('payment_unknown_outcome', {
+        mandate_id: mandateId,
         person: `${acct.person.given_name} ${acct.person.family_name}`,
         payee: a.payee,
         amount: { value: a.amount_cents, currency: 'EUR' },
@@ -244,6 +247,7 @@ export async function startBank(opts: BankOptions): Promise<BankService> {
     if (bill) acct.paid.add(`${bill.payee}:${bill.period}`);
     const id = `TRX-${randomUUID().slice(0, 8).toUpperCase()}`;
     events.append('payment_executed', {
+      mandate_id: mandateId,
       person: `${acct.person.given_name} ${acct.person.family_name}`,
       payee: a.payee,
       amount: { value: a.amount_cents, currency: 'EUR' },
@@ -257,9 +261,9 @@ export async function startBank(opts: BankOptions): Promise<BankService> {
     );
   }
 
-  function blockCard(acct: Account, reason?: string): ToolResult {
+  function blockCard(acct: Account, reason?: string, mandateId?: string): ToolResult {
     acct.card.blocked = true;
-    events.append('card_blocked', { person: `${acct.person.given_name} ${acct.person.family_name}`, reason });
+    events.append('card_blocked', { mandate_id: mandateId, person: `${acct.person.given_name} ${acct.person.family_name}`, reason });
     return ok({ card: `**** ${acct.card.last4}`, blocked: true }, `Card **** ${acct.card.last4} blocked.`);
   }
 
@@ -289,7 +293,7 @@ export async function startBank(opts: BankOptions): Promise<BankService> {
       name: keyof typeof bindings,
       description: string,
       shape: S,
-      run: (acct: Account, args: z.infer<z.ZodObject<S>>) => ToolResult,
+      run: (acct: Account, args: z.infer<z.ZodObject<S>>, mandateId: string) => ToolResult,
     ) {
       const binding = bindings[name];
       const guarded = guardTool<z.infer<z.ZodObject<S>>>(
@@ -297,7 +301,7 @@ export async function startBank(opts: BankOptions): Promise<BankService> {
         async (args, _extra, d) => {
           const acct = accountOf(d.principal);
           if (!acct) return fail('no_account', 'This bank holds no account for the person who granted the mandate.');
-          const result = run(acct, args);
+          const result = run(acct, args, d.invocation.mandate);
           // Recorded before the guard settles the reservation: `spent` includes this call as pending.
           events.append('ledger', {
             tool: name,
@@ -337,9 +341,9 @@ export async function startBank(opts: BankOptions): Promise<BankService> {
       'transfer',
       'Pay a payee from the register. `payee` is the payee id (its domain, e.g. acquaviva.example), `amount_cents` the amount in euro cents.',
       { payee: z.string().min(1).max(100), amount_cents: z.number().int().positive().max(10_000_000), reference: z.string().min(1).max(140) },
-      (acct, a) => transfer(acct, a),
+      (acct, a, m) => transfer(acct, a, m),
     );
-    register('block_card', "Block the person's payment card.", { reason: z.string().max(140).optional() }, (acct, a) => blockCard(acct, a.reason));
+    register('block_card', "Block the person's payment card.", { reason: z.string().max(140).optional() }, (acct, a, m) => blockCard(acct, a.reason, m));
     return server;
   }
 
@@ -385,7 +389,7 @@ export async function startBank(opts: BankOptions): Promise<BankService> {
     res: Parameters<Parameters<Router['post']>[1]>[1],
     tool: keyof typeof bindings,
     args: Record<string, unknown>,
-    run: (acct: Account) => ToolResult,
+    run: (acct: Account, mandateId: string) => ToolResult,
   ) {
     const { chain, invocation } = readAuth(req);
     const call = bindCall(bindings[tool], args);
@@ -399,7 +403,7 @@ export async function startBank(opts: BankOptions): Promise<BankService> {
     if (d.decision === 'DENY') return sendJson(res, 403, { decision: 'DENY', code: d.code, reason: d.reason });
     const acct = accountOf(d.principal);
     // As in guardTool: a throw is an unknown outcome, so the reservation stays pending for the sweep.
-    const result = acct ? run(acct) : fail('no_account', 'no account for this person');
+    const result = acct ? run(acct, d.invocation.mandate) : fail('no_account', 'no account for this person');
     if (d.reservation) {
       if (result.isError) await stores.ledger.release(d.reservation);
       else await stores.ledger.commit(d.reservation);
@@ -413,13 +417,13 @@ export async function startBank(opts: BankOptions): Promise<BankService> {
     const body = await readFields(req, 16 * 1024);
     const parsed = z.object({ payee: z.string().min(1).max(100), amount_cents: z.number().int().positive().max(10_000_000), reference: z.string().min(1).max(140) }).strict().safeParse(body);
     if (!parsed.success) throw new HttpError(400, 'invalid payment');
-    return restCall(req, res, 'transfer', parsed.data, (acct) => transfer(acct, parsed.data));
+    return restCall(req, res, 'transfer', parsed.data, (acct, m) => transfer(acct, parsed.data, m));
   });
   router.post('/psd2/v1/cards/block', async (req, res) => {
     const body = await readFields(req, 16 * 1024);
     const parsed = z.object({ reason: z.string().max(140).optional() }).strict().safeParse(body);
     if (!parsed.success) throw new HttpError(400, 'invalid request');
-    return restCall(req, res, 'block_card', parsed.data, (acct) => blockCard(acct, parsed.data.reason));
+    return restCall(req, res, 'block_card', parsed.data, (acct, m) => blockCard(acct, parsed.data.reason, m));
   });
 
   // ---- Admin and pages ----
@@ -500,6 +504,20 @@ export async function startBank(opts: BankOptions): Promise<BankService> {
   }, (opts.sweepSeconds ?? 10) * 1000);
   sweepTimer.unref();
 
+  // Play money for a public sandbox that many people use between nightly restarts.
+  const refillTimer = opts.refillSeconds
+    ? setInterval(() => {
+        for (const acct of accounts.values()) {
+          const opening = OPENING_BALANCES[acct.person.id] ?? 100000;
+          if (acct.balance >= opening / 2) continue;
+          acct.balance = opening;
+          acct.paid.clear();
+          events.append('account_refilled', { person: `${acct.person.given_name} ${acct.person.family_name}`, balance_after: opening });
+        }
+      }, opts.refillSeconds * 1000)
+    : undefined;
+  refillTimer?.unref();
+
   router.get('/api/reservations', async (_req, res) => {
     const unresolved = stores.reservations ? await stores.reservations.unresolved() : [];
     sendJson(res, 200, { stores: stores.kind, sweeps: Boolean(stores.reservations), unresolved: unresolved.map(reservationView) });
@@ -535,6 +553,7 @@ export async function startBank(opts: BankOptions): Promise<BankService> {
     sweep,
     close: async () => {
       clearInterval(sweepTimer);
+      if (refillTimer) clearInterval(refillTimer);
       await running.close();
     },
   };
