@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## 0.4.0 (first public release)
+## 0.4.0 (25 October 2026, first public release)
 
 Breaking
 - Delegate SD-JWT links are refused by default. Verifiers accept them with
