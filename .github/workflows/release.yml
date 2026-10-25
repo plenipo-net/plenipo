@@ -15,8 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     environment: npm
     permissions:
-      contents: read
-      id-token: write
+      contents: write   # to create the GitHub release
+      id-token: write   # to prove this workflow's identity to npm
     services:
       postgres:
         image: postgres:16
@@ -46,4 +46,21 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      - run: npm publish --access public
+      - name: Skip npm if this version is already published
+        id: npm
+        run: |
+          v="$(node -p "require('./package.json').version")"
+          if npm view "plenipo@$v" version >/dev/null 2>&1; then
+            echo "plenipo@$v is already on npm"; echo "published=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.npm.outputs.published != 'true'
+        run: npm publish --access public
+      - name: GitHub release with the notes from CHANGELOG.md
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          awk -v v="$v" '$0 ~ "^## "v"( |$)" {on=1; next} /^## / && on {exit} on' CHANGELOG.md > notes.md
+          test -s notes.md || echo "See CHANGELOG.md." > notes.md
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --title "Plenipo $v" --notes-file notes.md --verify-tag

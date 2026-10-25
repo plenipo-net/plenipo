@@ -19,16 +19,20 @@ and the person can revoke it at any time.
 > has not yet been audited by an external security firm. Do not use it to protect real money or real
 > data yet.
 
-## Why
+## Why Plenipo
 
-AI agents are starting to book, buy and sign on our behalf. Card networks and US startups
-are building their own agent registries, and they answer the question *which software
-acted*. They do not answer *who stands behind it, and with what authority*.
+The EU Digital Identity (EUDI) Wallet is the state-recognised identity that every EU
+Member State must offer its citizens under eIDAS 2. It lets a person prove who they are
+online with the strength of an ID card at a counter, disclose only the data a service
+needs, and approve a specific piece of content, such as a payment, with that identity.
 
-In Europe that answer already exists: by the end of 2026 every Member State must offer an
-EUDI Wallet holding a government-issued PID. Plenipo uses it as the root of trust, so a
-mandate is signed by the same wallet that people use to identify themselves, with no new
-identity and no new keys.
+The wallet assumes the person is present. AI agents act when the person is not, and
+today they do it with passwords, API keys or saved cards: full powers, with no limits,
+no expiry, and no way for a service to know who authorised them. Plenipo lets a person
+approve a mandate in their EUDI Wallet once (allowed actions and counterparties,
+spending limits, expiry), lets the agent attach proof of that approval to every
+request, and lets any service verify it before acting. Sub-delegation can only narrow
+a mandate, and the person can revoke it at any time.
 
 ## How it works
 
@@ -63,6 +67,8 @@ in [docs/design.md](docs/design.md).
 ```bash
 npm install plenipo
 ```
+
+[plenipo on npm](https://www.npmjs.com/package/plenipo).
 
 Node 22 or later. ES modules only.
 
