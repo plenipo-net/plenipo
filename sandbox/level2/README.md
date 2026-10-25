@@ -145,8 +145,13 @@ with `vct` `urn:eudi:pid:1`, ES256, a `cnf.jwk`, and disclosable `given_name`, `
 6. Whether walt.id's web or Compose demo wallets render unknown transaction data types: **not checked**
    (the run used the API; `preview` returns the decoded mandate).
 
-Still open: a PID issued by walt.id's Issuer API 2 instead of the sandbox PID provider, and the TS12
-e-mandate profile (`urn:eudi:sca:emandate:1`), which walt.id lists with the Plenipo configuration.
+The same run with `WALTID_EMANDATE=1` (TS12 e-mandate, `urn:eudi:sca:emandate:1`, bound to the PID)
+also **passed** on 25 October 2026: walt.id decoded the TS12 `payload` (purpose text with actions,
+counterparties and limits, `start_date`, `end_date`, `reference_number` equal to the mandate hash,
+`transaction_id`), presented the PID with its hash, and the bank enforced the full mandate.
+
+Still open: a PID issued by walt.id's Issuer API 2 instead of the sandbox PID provider, and an
+e-mandate bound to an SCA attestation of the account, as TS12 intends, instead of the PID.
 
 ## B. EUDI reference wallet (Android)
 

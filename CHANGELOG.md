@@ -3,7 +3,8 @@
 ## Unreleased
 
 - First run with a real wallet: walt.id Wallet API 2 approved a `plenipo_mandate` over OpenID4VP and
-  the sandbox bank enforced it (`sandbox/level2/README.md`).
+  the sandbox bank enforced it (`sandbox/level2/README.md`). The same run passed with a TS12 e-mandate
+  bound to the PID (`WALTID_EMANDATE=1`).
 - `sandbox/level2/waltid`: the override for walt.id's own stack is now `waltid-stack.override.yaml`, so
   `docker compose up` in that folder no longer loads it by mistake.
 
