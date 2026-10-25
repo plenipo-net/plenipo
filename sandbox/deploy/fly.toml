@@ -30,7 +30,7 @@ primary_region = "fra"
   SANDBOX_PUBLIC_URL_AGENT = "https://mcp.sandbox.plenipo.net"
   # Where the request_mandate answer sends the person to watch the session live; the code is appended as ?code=.
   # Without it the link is the sandbox dashboard at /demo/<code>.
-  # SANDBOX_WATCH_URL = "https://demo.plenipo.net/live"
+  SANDBOX_WATCH_URL = "https://plenipo.net/demo"
 
 [http_service]
   internal_port = 8080
