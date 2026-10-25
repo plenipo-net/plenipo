@@ -34,6 +34,8 @@ export interface SandboxOptions {
   sweepSeconds?: number;
   /** Public sandbox: how often drained accounts get their opening balance back. */
   refillSeconds?: number;
+  /** `mandate`: the bank opens a fresh account per root mandate (public sandbox). Default `person`. */
+  accountScope?: 'person' | 'mandate';
   /** The hosted MCP gateway for remote agents (port `agent`). Off unless set. */
   agentGateway?: AgentGatewaySettings;
 }
@@ -103,6 +105,7 @@ export function optionsFromEnv(env = process.env): SandboxOptions {
     strictClientId: env.SANDBOX_STRICT_CLIENT_ID === '1',
     verbose: env.SANDBOX_VERBOSE === '1',
     refillSeconds: env.SANDBOX_REFILL_SECONDS ? Number(env.SANDBOX_REFILL_SECONDS) : undefined,
+    accountScope: env.SANDBOX_ACCOUNT_SCOPE === 'mandate' ? 'mandate' : undefined,
     agentGateway:
       env.SANDBOX_AGENT_GATEWAY === '1'
         ? {

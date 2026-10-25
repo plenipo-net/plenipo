@@ -3,23 +3,26 @@
  * (Claude on the web, Claude Desktop with a remote connector) can use the sandbox without installing
  * anything.
  *
- * Every MCP session gets its own bridge: its own agent key, its own pending request and mandate, kept
- * in memory and dropped when the session closes or idles out. Every session also gets a demo code of
- * six characters; the bridge tags its dashboard events with it, and the dashboard serves the events of
- * one code at /api/demo/<code>, so the person can watch their own session live.
+ * Every MCP session gets its own bridge. A mandate journey (agent key, pending request, mandate) gets a
+ * demo code of six characters at its first request_mandate; the bridge tags its dashboard events with it,
+ * and the dashboard serves the events of one code at /api/demo/<code>, so the person can watch it live.
+ * The journey lives under its code, not under the connection: an MCP client may open several connections
+ * for one conversation, and a later connection can take the journey over (mandate_status with demo_code).
  *
  * The same server runs the scripted scenarios on request (GET /scenarios, POST /scenarios/<id>/run),
  * each under a fresh demo code, for a showcase page that lets visitors trigger them and watch.
  *
- * Public exposure is bounded: an optional secret path token, a cap on open sessions, an idle timeout,
- * and per-address limits on new sessions and on requests.
+ * Public exposure is bounded: an optional secret path token, a cap on open sessions, idle timeouts
+ * (short for connections that never call a tool), a global rate of new sessions and a per-session rate of
+ * requests. Remote MCP clients connect from their provider's servers, so the client address says little
+ * about who is behind a session; it limits only the scenario runs, which come from visitors' browsers.
  */
 import { randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { SandboxAgentClient, type SandboxEndpoints } from '../agent/client.js';
-import { BridgeCore, MemoryStateStore } from '../bridge/core.js';
+import { BridgeCore, MemoryStateStore, type BridgeStateStore } from '../bridge/core.js';
 import { BRIDGE_INSTRUCTIONS, createBridgeServer } from '../bridge/server.js';
 import { HttpError, listen, readBody, Router, sendJson, type Request, type RunningServer } from '../http.js';
 import { runScenario, SCENARIOS, type ScenarioEnv } from '../scenarios.js';
@@ -39,11 +42,19 @@ export interface AgentGatewayOptions {
   /** Public base URL of the dashboard, for the default watch link. */
   publicDashboardUrl?: string;
   token?: string;
+  /** Open MCP sessions at most (default 500). */
   maxSessions?: number;
+  /** Close a session that called a tool after this long without requests (default 2 hours). */
   idleSeconds?: number;
+  /** Close a session that never called a tool after this long (default 10 minutes). */
+  unusedIdleSeconds?: number;
+  /** New MCP sessions per hour, all clients together (default 300). */
   sessionsPerHour?: number;
+  /** Requests per minute on one MCP session (default 120). */
   requestsPerMinute?: number;
   clientIpHeader?: string;
+  /** The bank's status cache, in seconds: how long a revocation takes to bite. */
+  statusCacheSeconds?: number;
   log?: (line: string) => void;
   /** Lets visitors run the scripted scenarios. Each run gets its own client and demo code. */
   scenarios?: {
@@ -62,17 +73,22 @@ export const PUBLIC_SCENARIOS = SCENARIOS.filter((s) => !PRIVATE_SCENARIOS.has(s
 export interface AgentGatewayService extends RunningServer {
   /** Path of the MCP endpoint, including the token when one is set. */
   mcpPath: string;
-  /** Open sessions: id → demo code. */
+  /** Open sessions: id → demo code ('' until the session starts a journey). */
   sessions(): Map<string, string>;
 }
 
 interface Session {
-  code: string;
   core: BridgeCore;
   server: Server;
   transport: StreamableHTTPServerTransport;
   lastSeen: number;
+  /** Whether the client ever called a tool on this session. */
+  used: boolean;
 }
+
+/** How long a journey's state is kept for a later connection to take over. */
+const JOURNEY_TTL_MS = 24 * 3600_000;
+const MAX_JOURNEYS = 5000;
 
 /** No 0/O or 1/I: the code is read aloud and typed by hand. */
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -113,11 +129,13 @@ function rpcError(res: Parameters<Parameters<Router['mount']>[1]>[1], status: nu
 
 export async function startAgentGateway(opts: AgentGatewayOptions): Promise<AgentGatewayService> {
   const log = opts.log ?? (() => {});
-  const maxSessions = opts.maxSessions ?? 200;
+  const maxSessions = opts.maxSessions ?? 500;
   const idleMs = (opts.idleSeconds ?? 2 * 3600) * 1000;
-  const newSessions = new Limiter(opts.sessionsPerHour ?? 20, 3600_000);
-  const requests = new Limiter(opts.requestsPerMinute ?? 240, 60_000);
+  const unusedIdleMs = (opts.unusedIdleSeconds ?? 600) * 1000;
+  const newSessions = new Limiter(opts.sessionsPerHour ?? 300, 3600_000);
+  const requests = new Limiter(opts.requestsPerMinute ?? 120, 60_000);
   const sessions = new Map<string, Session>();
+  const journeys = new Map<string, { store: BridgeStateStore; lastUsed: number }>();
   const mcpPath = opts.token ? `/mcp/${opts.token}` : '/mcp';
   const tokenBytes = opts.token ? Buffer.from(opts.token) : undefined;
 
@@ -145,16 +163,35 @@ export async function startAgentGateway(opts: AgentGatewayOptions): Promise<Agen
     const s = sessions.get(id);
     if (!s) return;
     sessions.delete(id);
-    await s.core.note('session_closed', { reason: why });
+    // A connection that never acted leaves no trace in the public feeds.
+    if (s.core.demoCode) await s.core.note('session_closed', { reason: why });
     await s.core.close();
     await s.transport.close().catch(() => {});
     await s.server.close().catch(() => {});
-    log(`session ${s.code} closed (${why})`);
+    log(`session ${id.slice(0, 8)}${s.core.demoCode ? ` (${s.core.demoCode})` : ''} closed (${why}${s.used ? '' : ', never used'})`);
   }
 
+  const demo = {
+    open() {
+      let code = newDemoCode();
+      while (journeys.has(code)) code = newDemoCode();
+      const store = new MemoryStateStore();
+      if (journeys.size >= MAX_JOURNEYS) journeys.delete(journeys.keys().next().value!);
+      journeys.set(code, { store, lastUsed: Date.now() });
+      log(`journey ${code} started`);
+      return { code, store };
+    },
+    adopt(code: string) {
+      const j = journeys.get(code);
+      if (!j) return undefined;
+      j.lastUsed = Date.now();
+      return j.store;
+    },
+    watchUrl: watchLink,
+  };
+
   async function open(ip: string): Promise<Session> {
-    const code = newDemoCode();
-    const watch = watchLink(code);
+    const tag = randomUUID().slice(0, 8);
     const core = new BridgeCore({
       platformUrl: opts.platformUrl,
       publicPlatformUrl: opts.publicPlatformUrl,
@@ -162,22 +199,30 @@ export async function startAgentGateway(opts: AgentGatewayOptions): Promise<Agen
       dashboardUrl: opts.dashboardUrl,
       dashboardToken: opts.dashboardToken,
       store: new MemoryStateStore(),
-      log: (line) => log(`[${code}] ${line}`),
-      noteFields: { demo_code: code },
-      demoHint: `This is the public Plenipo sandbox: test identities, play money. Demo code ${code}. The person can watch every step of this session live at ${watch}`,
+      log: (line) => log(`[${core.demoCode ?? tag}] ${line}`),
+      demo,
+      statusCacheSeconds: opts.statusCacheSeconds,
     });
-    const server = createBridgeServer(core, {
+    const session: Session = { core, server: undefined as never, transport: undefined as never, lastSeen: Date.now(), used: false };
+    session.server = createBridgeServer(core, {
       instructions:
         `${BRIDGE_INSTRUCTIONS} This is the public Plenipo sandbox: the people, the bank and the money are simulated. ` +
-        `Demo code of this session: ${code}. Tell the person they can watch every step live at ${watch}`,
+        'The request_mandate answer carries a demo code and a link where the person can watch every step live: give both to the person.',
+      onToolCall: (name) => {
+        session.used = true;
+        if (core.demoCode) {
+          const j = journeys.get(core.demoCode);
+          if (j) j.lastUsed = Date.now();
+        }
+        log(`[${core.demoCode ?? tag}] ${name}`);
+      },
     });
-    const session: Session = { code, core, server, transport: undefined as never, lastSeen: Date.now() };
+    const server = session.server;
     session.transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
       onsessioninitialized: (id) => {
         sessions.set(id, session);
-        log(`session ${code} opened from ${ip}`);
-        void core.note('session_started', { text: `A remote agent connected (demo code ${code})` });
+        log(`session ${id.slice(0, 8)} opened from ${ip}`);
       },
     });
     session.transport.onclose = () => {
@@ -225,10 +270,10 @@ export async function startAgentGateway(opts: AgentGatewayOptions): Promise<Agen
   router.mount('/mcp', async (req, res) => {
     if (!pathOk(req.path)) throw new HttpError(404, 'not_found');
     const ip = clientIp(req);
-    if (!requests.hit(ip)) return rpcError(res, 429, 'Too many requests: slow down', { 'retry-after': '60' });
     const sid = req.headers['mcp-session-id'];
     const existing = typeof sid === 'string' ? sessions.get(sid) : undefined;
     if (typeof sid === 'string' && !existing) return rpcError(res, 404, 'Session not found: start a new one');
+    if (typeof sid === 'string' && !requests.hit(sid)) return rpcError(res, 429, 'Too many requests on this session: slow down', { 'retry-after': '60' });
 
     if (req.method === 'POST') {
       let body: unknown;
@@ -244,7 +289,7 @@ export async function startAgentGateway(opts: AgentGatewayOptions): Promise<Agen
       }
       if (!isInitializeRequest(body)) return rpcError(res, 400, 'Bad request: no session; send initialize first');
       if (sessions.size >= maxSessions) return rpcError(res, 503, 'The sandbox is full: try again in a few minutes', { 'retry-after': '300' });
-      if (!newSessions.hit(ip)) return rpcError(res, 429, 'Too many new sessions from this address: try again later', { 'retry-after': '3600' });
+      if (!newSessions.hit('all')) return rpcError(res, 503, 'The sandbox has taken too many new connections this hour: try again later', { 'retry-after': '600' });
       const s = await open(ip);
       return s.transport.handleRequest(req.raw, res, body);
     }
@@ -258,7 +303,8 @@ export async function startAgentGateway(opts: AgentGatewayOptions): Promise<Agen
 
   const timer = setInterval(() => {
     const now = Date.now();
-    for (const [id, s] of sessions) if (now - s.lastSeen > idleMs) void drop(id, 'idle');
+    for (const [id, s] of sessions) if (now - s.lastSeen > (s.used ? idleMs : unusedIdleMs)) void drop(id, 'idle');
+    for (const [code, j] of journeys) if (now - j.lastUsed > JOURNEY_TTL_MS) journeys.delete(code);
     newSessions.sweep(now);
     requests.sweep(now);
   }, 60_000);
@@ -270,7 +316,7 @@ export async function startAgentGateway(opts: AgentGatewayOptions): Promise<Agen
   return {
     ...running,
     mcpPath,
-    sessions: () => new Map([...sessions].map(([id, s]) => [id, s.code])),
+    sessions: () => new Map([...sessions].map(([id, s]) => [id, s.core.demoCode ?? ''])),
     close: async () => {
       clearInterval(timer);
       // Sessions only: scenario runs end on their own and never outlive the services for long.

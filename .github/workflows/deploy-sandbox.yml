@@ -1,0 +1,58 @@
+# Deploys the public sandbox (sandbox.plenipo.net) to Fly.io when main changes what it runs.
+# Needs the repository secret FLY_API_TOKEN, a deploy token for the app:
+#   fly tokens create deploy --app plenipo-sandbox --expiry 8760h
+# Without the secret the job only says so. The machine restarts with a clean state, as it does every night.
+name: Deploy sandbox
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'sandbox/**'
+      - 'src/**'
+      - 'package.json'
+      - 'package-lock.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-sandbox
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.repository == 'plenipo-net/plenipo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+    steps:
+      - name: Check the deploy token
+        id: token
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo "::notice::FLY_API_TOKEN is not set: the sandbox was not deployed."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.token.outputs.ok == 'true'
+      - name: Install flyctl
+        if: steps.token.outputs.ok == 'true'
+        run: |
+          curl -fsSL https://fly.io/install.sh | sh
+          echo "$HOME/.fly/bin" >> "$GITHUB_PATH"
+      - name: Deploy
+        if: steps.token.outputs.ok == 'true'
+        run: flyctl deploy --app plenipo-sandbox --config sandbox/deploy/fly.toml --dockerfile sandbox/deploy/Dockerfile --ha=false --remote-only --wait-timeout 600
+      - name: Check the public sandbox
+        if: steps.token.outputs.ok == 'true'
+        run: |
+          for i in $(seq 1 20); do
+            if curl -fsS -o /dev/null https://plenipo-sandbox.fly.dev/healthz; then echo "healthy"; exit 0; fi
+            sleep 6
+          done
+          echo "::error::the sandbox did not become healthy"; exit 1

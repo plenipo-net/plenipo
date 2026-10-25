@@ -66,10 +66,26 @@ export interface BridgeConfig {
   store: BridgeStateStore;
   /** Where to log; must not be stdout for the stdio bridge. */
   log?: (line: string) => void;
-  /** Fields added to every dashboard event, e.g. the demo code of a hosted session. */
+  /** Fields added to every dashboard event. */
   noteFields?: Record<string, unknown>;
-  /** A line appended to the request_mandate answer, e.g. where to watch the session live. */
-  demoHint?: string;
+  /** Hosted demo: demo codes, given out with the first mandate request of a session (see agent-gateway.ts). */
+  demo?: DemoCodes;
+  /** How long the bank may keep using a cached status list: what a revocation waits for, in seconds. */
+  statusCacheSeconds?: number;
+}
+
+/**
+ * Demo codes of a hosted bridge. A code names one mandate journey and the state behind it, not a connection:
+ * an MCP client may open several connections for one conversation, and a later connection can take the
+ * journey over with the code.
+ */
+export interface DemoCodes {
+  /** A new code with an empty state store. */
+  open(): { code: string; store: BridgeStateStore };
+  /** The state store of an existing code, or undefined. */
+  adopt(code: string): BridgeStateStore | undefined;
+  /** Where the person watches the journey live. */
+  watchUrl(code: string): string;
 }
 
 export interface ToolText {
@@ -122,9 +138,19 @@ export class BridgeCore {
   private bank?: Client;
   private tools?: MirroredTool[];
   private readonly log: (line: string) => void;
+  private store: BridgeStateStore;
+  /** The hosted demo code of this journey, once a mandate was requested or a code adopted. */
+  demoCode?: string;
 
   constructor(readonly config: BridgeConfig) {
     this.log = config.log ?? (() => {});
+    this.store = config.store;
+  }
+
+  /** The line that tells the person where to watch, for a hosted demo with a code. */
+  private demoLine(): string {
+    if (!this.config.demo || !this.demoCode) return '';
+    return `\n\nThis is the public Plenipo sandbox: test identities, play money. Demo code ${this.demoCode}: the person can watch every step live at ${this.config.demo.watchUrl(this.demoCode)}`;
   }
 
   private async http<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
@@ -152,7 +178,7 @@ export class BridgeCore {
       await fetch(`${this.config.dashboardUrl}/api/agent-events`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', ...(this.config.dashboardToken ? { authorization: `Bearer ${this.config.dashboardToken}` } : {}) },
-        body: JSON.stringify({ type, ...data, ...this.config.noteFields }),
+        body: JSON.stringify({ type, ...data, ...this.config.noteFields, ...(this.demoCode ? { demo_code: this.demoCode } : {}) }),
         signal: AbortSignal.timeout(2000),
       });
     } catch {
@@ -166,7 +192,7 @@ export class BridgeCore {
     const { privateKey } = await generateKeyPair('ES256', { extractable: true });
     const privateJwk = await exportJWK(privateKey);
     state.agent = { privateJwk, publicJwk: { kty: 'EC', crv: 'P-256', x: privateJwk.x, y: privateJwk.y } };
-    await this.config.store.save(state);
+    await this.store.save(state);
     this.log('generated a new agent key');
     return state.agent;
   }
@@ -190,7 +216,15 @@ export class BridgeCore {
     if (input.per_payment_eur > input.total_eur) return { isError: true, text: 'per_payment_eur cannot exceed total_eur' };
     if (typeof input.purpose !== 'string' || input.purpose.trim().length < 5) return { isError: true, text: 'purpose must say, in words the person will read, what the mandate is for' };
 
-    const state = await this.config.store.load();
+    if (this.config.demo && !this.demoCode) {
+      const opened = this.config.demo.open();
+      // Carry over what this connection already holds (its agent key), so nothing signed so far is orphaned.
+      await opened.store.save(await this.store.load());
+      this.store = opened.store;
+      this.demoCode = opened.code;
+      await this.note('session_started', { text: `An agent started a mandate journey (demo code ${opened.code})` });
+    }
+    const state = await this.store.load();
     const agent = await this.agent(state);
     const req = await this.http<{ request_id: string; mandate_id: string; request_uri: string; authorization_url: string; wallet_url?: string }>('POST', '/api/requests', {
       agent_name: 'Claude (MCP bridge)',
@@ -203,15 +237,16 @@ export class BridgeCore {
       ...(input.emandate ? { transaction_data_type: 'emandate' } : {}),
     });
     state.pending = { requestId: req.request_id, mandateId: req.mandate_id, walletUrl: req.wallet_url, authorizationUrl: req.authorization_url, createdAt: new Date().toISOString() };
-    await this.config.store.save(state);
+    await this.store.save(state);
     await this.note('note', { text: `Claude asked for a mandate: ${input.purpose}`, request_id: req.request_id, mandate_id: req.mandate_id });
     const link = req.wallet_url ?? req.authorization_url;
     return {
       text:
         `Mandate requested. The person must now approve it in their wallet. Ask them to open this link (it shows exactly what you will be allowed to do) and approve:\n\n${link}\n\n` +
-        `A phone wallet can scan the QR code at ${this.config.publicPlatformUrl ?? this.config.platformUrl}/requests/${req.request_id}. ` +
-        'After they approve, call mandate_status. Do not try to pay before the mandate is active.' +
-        (this.config.demoHint ? `\n\n${this.config.demoHint}` : ''),
+        `A phone wallet can scan the QR code at ${this.config.publicPlatformUrl ?? this.config.platformUrl}/requests/${req.request_id}.\n\n` +
+        'Tell the person plainly that approving gives you permission and pays nothing: nothing happens at the bank until they come back and tell you they approved. ' +
+        'Then call mandate_status, and act only once the mandate is active.' +
+        this.demoLine(),
       data: {
         request_id: req.request_id,
         mandate_id: req.mandate_id,
@@ -223,12 +258,27 @@ export class BridgeCore {
     };
   }
 
-  async mandateStatus(): Promise<ToolText> {
-    const state = await this.config.store.load();
+  async mandateStatus(input: { demo_code?: string } = {}): Promise<ToolText> {
+    // A new connection takes over a journey by its demo code: hosted demo only.
+    if (this.config.demo && typeof input.demo_code === 'string' && input.demo_code && input.demo_code.toUpperCase() !== this.demoCode) {
+      const mine = await this.store.load();
+      if (mine.pending || mine.mandate) return { isError: true, text: `This connection already follows demo code ${this.demoCode}; it cannot take over another.` };
+      const code = input.demo_code.toUpperCase();
+      const store = this.config.demo.adopt(code);
+      if (!store) return { isError: true, text: `No journey with demo code ${code} on this sandbox (codes last 24 hours, and the sandbox restarts every night).` };
+      this.store = store;
+      this.demoCode = code;
+      this.log(`took over demo code ${code}`);
+      await this.note('note', { text: 'A new connection of the agent took over this journey' });
+    }
+    const state = await this.store.load();
     if (state.pending) {
       const r = await this.http<{ state: string; mandate_id: string; error?: string }>('GET', `/api/requests/${encodeURIComponent(state.pending.requestId)}`);
       if (r.state === 'pending') {
-        return { text: `Still waiting for the person to approve in the wallet: ${state.pending.walletUrl ?? state.pending.authorizationUrl}`, data: { state: 'pending' } };
+        return {
+          text: `Still waiting for the person to approve in the wallet: ${state.pending.walletUrl ?? state.pending.authorizationUrl}. Nothing has been paid.${this.demoLine()}`,
+          data: { state: 'pending', ...(this.demoCode ? { demo_code: this.demoCode } : {}) },
+        };
       }
       // A platform that recorded the approval keeps the mandate even if a later response to the same
       // request was rejected: look for it before giving up, so a second answer never loses a valid approval.
@@ -239,7 +289,7 @@ export class BridgeCore {
           : await this.http<MandateView>('GET', `/api/mandates/${encodeURIComponent(state.pending.mandateId)}`).catch(() => undefined);
       if (!m || (r.state !== 'active' && m.state !== 'active')) {
         delete state.pending;
-        await this.config.store.save(state);
+        await this.store.save(state);
         return { isError: true, text: `The mandate request ended as ${r.state}${r.error ? ` (${r.error})` : ''}. No mandate: you cannot act at the bank.`, data: { state: r.state } };
       }
       // The bridge signs under this mandate only if it names the bridge's own key.
@@ -248,7 +298,7 @@ export class BridgeCore {
       }
       state.mandate = { id: m.id, chain: m.chain, mandate: m.mandate, approvedAt: new Date().toISOString() };
       delete state.pending;
-      await this.config.store.save(state);
+      await this.store.save(state);
       await this.note('note', { text: 'The person approved the mandate; Claude can act at the bank', mandate_id: m.id });
     }
     if (!state.mandate) return { isError: true, text: 'No mandate yet. Call request_mandate first.', data: { state: 'none' } };
@@ -261,22 +311,28 @@ export class BridgeCore {
         `Mandate ${info?.state ?? 'state unknown'}, granted by ${who}.\n` +
         `Purpose: ${m.purpose ?? '-'}\nActions: ${m.actions.join(', ')}\nPayees: ${(m.counterparties ?? ['any']).join(', ')}\n` +
         (lim ? `Limits: ${lim.per_operation !== undefined ? `${(lim.per_operation / 100).toFixed(2)} ${lim.currency} per payment` : 'no per-payment limit'}, ${lim.total !== undefined ? `${(lim.total / 100).toFixed(2)} ${lim.currency} in total` : 'no total'}\n` : '') +
-        `Valid until ${new Date(m.exp * 1000).toISOString()}. Amounts in the bank tools are in euro cents.`,
-      data: { state: info?.state, mandate_id: m.id, principal: who, mandate: m },
+        `Valid until ${new Date(m.exp * 1000).toISOString()}. Amounts in the bank tools are in euro cents.` +
+        this.demoLine(),
+      data: { state: info?.state, mandate_id: m.id, principal: who, mandate: m, ...(this.demoCode ? { demo_code: this.demoCode } : {}) },
     };
   }
 
   async revokeMandate(): Promise<ToolText> {
-    const state = await this.config.store.load();
+    const state = await this.store.load();
     const id = state.mandate?.id ?? state.pending?.mandateId;
     if (!state.mandate) return { isError: true, text: 'There is no approved mandate to revoke.' };
     await this.http('POST', `/api/mandates/${encodeURIComponent(id!)}/revoke`, {});
     await this.note('note', { text: 'Claude revoked its own mandate', mandate_id: id });
-    return { text: `Mandate ${id} revoked at the platform. The bank will refuse further calls under it as soon as its status cache refreshes (a few seconds).` };
+    const wait = this.config.statusCacheSeconds;
+    return {
+      text:
+        `Mandate ${id} revoked at the platform. The bank refuses further calls under it once its cached status list expires` +
+        (wait !== undefined ? `: within ${wait} second${wait === 1 ? '' : 's'} on this bank.` : '. That delay is set by the bank (the library default is 60 seconds).'),
+    };
   }
 
   async explainLastDecision(): Promise<ToolText> {
-    const { last } = await this.config.store.load();
+    const { last } = await this.store.load();
     if (!last) return { text: 'No bank call has been made through this bridge yet.' };
     const inv = last.invocation;
     const lines = [
@@ -322,11 +378,11 @@ export class BridgeCore {
   async callBankTool(name: string, rawArgs: Record<string, unknown>): Promise<ToolText> {
     const tool = (await this.bankTools()).find((t) => t.name === name);
     if (!tool) return { isError: true, text: `The bank has no tool ${name}, or the bank is not reachable.` };
-    const state = await this.config.store.load();
+    const state = await this.store.load();
     const record = async (last: Omit<LastDecision, 'at' | 'tool'>) => {
-      const s = await this.config.store.load();
+      const s = await this.store.load();
       s.last = { at: new Date().toISOString(), tool: name, ...last };
-      await this.config.store.save(s);
+      await this.store.save(s);
     };
     if (!state.mandate || !state.agent) {
       const text = state.pending

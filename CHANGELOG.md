@@ -12,6 +12,14 @@
   demo code; the dashboard serves that session's events at `/api/demo/<code>` (JSON and SSE, readable
   from any origin) and shows it alone at `/demo/<code>`. The gateway can also run the scripted
   scenarios on request, each under its own code.
+- Sandbox, after the first public demo with Claude: with `SANDBOX_ACCOUNT_SCOPE=mandate` every root
+  mandate gets its own copy of the account, so visitors never find bills another visitor paid;
+  `list_payees` says in words which bills are open, or that none are; the wallet and the bridge say that
+  approving pays nothing; a demo code now names a mandate journey, given with the first
+  `request_mandate`, and a later connection can continue it (`mandate_status` with `demo_code`);
+  connections that never call a tool leave no trace; gateway limits no longer count the address of
+  the MCP client's servers; the revocation answer gives the bank's real cache delay. A workflow deploys
+  the sandbox to Fly.io on merge.
 - Sandbox, hosting: a front door that dispatches by host name on one port (`src/front.ts`), a Fly.io
   configuration (`sandbox/deploy/fly.toml`), a daily clean restart and a play-money refill for a public
   instance. Bank payment and card events now carry the mandate id. When `SANDBOX_ADMIN_TOKEN` is set,

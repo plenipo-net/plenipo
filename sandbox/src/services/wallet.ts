@@ -242,7 +242,10 @@ export async function startWallet(opts: WalletOptions): Promise<WalletService> {
     const name = `${holder.person.given_name} ${holder.person.family_name}`;
     if (status === 200) {
       r.state = decision === 'approve' ? 'approved' : 'refused';
-      r.outcome = decision === 'approve' ? 'The platform accepted your approval.' : 'You refused. The platform has been told.';
+      r.outcome =
+        decision === 'approve'
+          ? 'Approved. Nothing has been paid yet: go back to the agent and tell it you approved. It can act only within the limits you just set.'
+          : 'You refused. The platform has been told.';
     } else if (status === 409) {
       // Answered from elsewhere (another device, or an earlier copy of this request): the earlier answer stands.
       r.state = 'error';
