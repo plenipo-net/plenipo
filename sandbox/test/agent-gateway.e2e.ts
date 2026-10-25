@@ -127,9 +127,9 @@ describe('hosted MCP gateway', () => {
     const decisions = fa.events.filter((e) => e.type === 'decision').map((e) => e.decision);
     expect(decisions).toEqual(['ALLOW', 'DENY']);
     expect(fa.events.find((e) => e.type === 'tool_result' && e.decision === 'DENY')?.code).toBe('COUNTERPARTY_NOT_PERMITTED');
-    // In arrival order, and nothing from session b.
-    const ids = fa.events.map((e) => e.id);
-    expect([...ids].sort((x, y) => x - y)).toEqual(ids);
+    // In the order things happened, and nothing from session b.
+    const ts = fa.events.map((e) => e.ts as string);
+    expect([...ts].sort()).toEqual(ts);
     expect(fa.events.some((e) => e.demo_code === b.code)).toBe(false);
 
     const fb = await feed(b.code!);

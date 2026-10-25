@@ -193,6 +193,7 @@ export async function startSandbox(options: SandboxOptions = {}): Promise<Sandbo
         host,
         port: port('agent'),
         platformUrl: platform.url,
+        publicPlatformUrl: publicUrls.platform,
         bankUrl: bank.url,
         dashboardUrl: dashboard.url,
         dashboardToken: options.adminToken,

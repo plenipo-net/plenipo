@@ -28,6 +28,8 @@ export interface AgentGatewayOptions {
   host: string;
   port: number;
   platformUrl: string;
+  /** The platform's public URL, for the links the bridge gives the person. */
+  publicPlatformUrl?: string;
   bankUrl: string;
   /** Where the bridges post their events (the dashboard's internal URL). */
   dashboardUrl: string;
@@ -155,6 +157,7 @@ export async function startAgentGateway(opts: AgentGatewayOptions): Promise<Agen
     const watch = watchLink(code);
     const core = new BridgeCore({
       platformUrl: opts.platformUrl,
+      publicPlatformUrl: opts.publicPlatformUrl,
       bankUrl: opts.bankUrl,
       dashboardUrl: opts.dashboardUrl,
       dashboardToken: opts.dashboardToken,

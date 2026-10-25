@@ -56,6 +56,8 @@ export class MemoryStateStore implements BridgeStateStore {
 
 export interface BridgeConfig {
   platformUrl: string;
+  /** The platform as a person's browser or phone reaches it, when it differs from platformUrl. */
+  publicPlatformUrl?: string;
   bankUrl: string;
   /** Optional: narrative events for the sandbox dashboard. */
   dashboardUrl?: string;
@@ -207,7 +209,7 @@ export class BridgeCore {
     return {
       text:
         `Mandate requested. The person must now approve it in their wallet. Ask them to open this link (it shows exactly what you will be allowed to do) and approve:\n\n${link}\n\n` +
-        `A phone wallet can scan the QR code at ${this.config.platformUrl}/requests/${req.request_id}. ` +
+        `A phone wallet can scan the QR code at ${this.config.publicPlatformUrl ?? this.config.platformUrl}/requests/${req.request_id}. ` +
         'After they approve, call mandate_status. Do not try to pay before the mandate is active.' +
         (this.config.demoHint ? `\n\n${this.config.demoHint}` : ''),
       data: {
