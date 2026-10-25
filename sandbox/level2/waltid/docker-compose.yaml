@@ -1,0 +1,14 @@
+# walt.id Wallet API 2 alone, configured to accept Plenipo mandates. Run from this directory:
+#   docker compose up
+# The sandbox must listen on 0.0.0.0 and announce http://host.docker.internal:4403 as the platform URL
+# (see level2/README.md, "walt.id wallet").
+services:
+  wallet-api2:
+    image: waltid/wallet-api2:${WALTID_VERSION:-stable}
+    pull_policy: missing
+    ports:
+      - "7006:7006"
+    volumes:
+      - ./config:/waltid-wallet-api2/config:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

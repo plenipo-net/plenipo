@@ -1,0 +1,52 @@
+# Public sandbox behind Caddy (automatic TLS). See sandbox/level2/README.md, "Public host".
+# From sandbox/deploy/:  cp env.example .env  (edit it)  &&  docker compose up -d --build
+services:
+  sandbox:
+    build:
+      context: ../..
+      dockerfile: sandbox/deploy/Dockerfile
+    restart: unless-stopped
+    environment:
+      SANDBOX_HOST: 0.0.0.0
+      SANDBOX_ADMIN_TOKEN: ${SANDBOX_ADMIN_TOKEN:?set SANDBOX_ADMIN_TOKEN in .env}
+      SANDBOX_STRICT_CLIENT_ID: "1"
+      SANDBOX_STATUS_CACHE_SECONDS: ${SANDBOX_STATUS_CACHE_SECONDS:-5}
+      PLENIPO_PID_ISSUER: https://pid.${SANDBOX_DOMAIN}
+      PLENIPO_PLATFORM_ORIGIN: https://platform.${SANDBOX_DOMAIN}
+      PLENIPO_BANK_HOST: bank.${SANDBOX_DOMAIN}
+      SANDBOX_PUBLIC_URL_DASHBOARD: https://${SANDBOX_DOMAIN}
+      SANDBOX_PUBLIC_URL_PID: https://pid.${SANDBOX_DOMAIN}
+      SANDBOX_PUBLIC_URL_WALLET: https://wallet.${SANDBOX_DOMAIN}
+      SANDBOX_PUBLIC_URL_PLATFORM: https://platform.${SANDBOX_DOMAIN}
+      SANDBOX_PUBLIC_URL_BANK: https://bank.${SANDBOX_DOMAIN}
+      # Request-object certificate for x509_san_dns:platform.<domain>, from level2/make-rp-cert.ts.
+      PLATFORM_RP_KEY: /run/plenipo/rp-key.pem
+      PLATFORM_RP_CHAIN: /run/plenipo/rp-chain.pem
+      WALLET_RP_ANCHORS: /run/plenipo/rp-ca.pem
+    volumes:
+      - ./secrets:/run/plenipo:ro
+    expose:
+      - "4400-4404"
+
+  caddy:
+    image: caddy:2.10
+    restart: unless-stopped
+    depends_on:
+      - sandbox
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      SANDBOX_DOMAIN: ${SANDBOX_DOMAIN:?set SANDBOX_DOMAIN in .env}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
+      DEMO_USER: ${DEMO_USER:-demo}
+      DEMO_PASSWORD_HASH: ${DEMO_PASSWORD_HASH:?set DEMO_PASSWORD_HASH (caddy hash-password) in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

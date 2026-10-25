@@ -1,0 +1,16 @@
+name: Proposal
+description: A new feature, an extension of the profile or an interoperability need.
+labels: [proposal]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What you are trying to do and why the current version does not allow it.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: How it could work. For changes to the wire formats, say what a verifier that does not know the change would do.

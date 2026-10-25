@@ -1,0 +1,65 @@
+# TLS for the public sandbox. Only what a phone wallet must reach is public:
+#   platform: /request/* (request_uri), /response/* (response_uri), /status/mandates
+#   pid:      /status/1 (PID status list), /trust-anchor.pem
+# Everything else (dashboard, sandbox wallet, platform UI and API, bank, admin) needs the demo login.
+{
+	email {$ACME_EMAIL}
+}
+
+(demo_login) {
+	basic_auth {
+		{$DEMO_USER} {$DEMO_PASSWORD_HASH}
+	}
+}
+
+(headers) {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+}
+
+{$SANDBOX_DOMAIN} {
+	import headers
+	import demo_login
+	reverse_proxy sandbox:4400
+}
+
+platform.{$SANDBOX_DOMAIN} {
+	import headers
+	@wallet_facing path /request/* /response/* /status/mandates
+	handle @wallet_facing {
+		request_body {
+			max_size 512KB
+		}
+		reverse_proxy sandbox:4403
+	}
+	handle {
+		import demo_login
+		reverse_proxy sandbox:4403
+	}
+}
+
+pid.{$SANDBOX_DOMAIN} {
+	import headers
+	@public path /status/1 /trust-anchor.pem
+	handle @public {
+		reverse_proxy sandbox:4401
+	}
+	handle {
+		import demo_login
+		reverse_proxy sandbox:4401
+	}
+}
+
+wallet.{$SANDBOX_DOMAIN} {
+	import headers
+	import demo_login
+	reverse_proxy sandbox:4402
+}
+
+bank.{$SANDBOX_DOMAIN} {
+	import headers
+	import demo_login
+	reverse_proxy sandbox:4404
+}

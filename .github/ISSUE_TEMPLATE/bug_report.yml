@@ -1,0 +1,28 @@
+name: Bug report
+description: Something does not work as documented. For vulnerabilities use Security > Report a vulnerability instead.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: A minimal script or a failing test is best. Never paste real keys or personal data.
+  - type: input
+    id: version
+    attributes:
+      label: Plenipo version
+      placeholder: "0.4.0"
+    validations:
+      required: true
+  - type: input
+    id: node
+    attributes:
+      label: Node version
+      placeholder: "22.x"

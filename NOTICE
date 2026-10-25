@@ -1,0 +1,8 @@
+Plenipo
+Copyright 2026 Fabio Lalli and the Plenipo contributors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+It depends on third-party packages distributed through npm under their own licenses (MIT, ISC,
+Apache-2.0, BSD-2-Clause, BSD-3-Clause, 0BSD, Zlib). Those packages are not included in this
+repository or in the published package; they are installed separately by npm.

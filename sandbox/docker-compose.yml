@@ -1,0 +1,17 @@
+# The whole sandbox on your own machine, on any OS with Docker.
+# From sandbox/:  docker compose up --build      then open http://127.0.0.1:4400
+# Test identities only. For a public host with TLS see deploy/docker-compose.yml.
+services:
+  sandbox:
+    build:
+      context: ..
+      dockerfile: sandbox/deploy/Dockerfile
+    environment:
+      SANDBOX_HOST: 0.0.0.0
+      SANDBOX_PUBLIC_URL_DASHBOARD: http://127.0.0.1:4400
+      SANDBOX_PUBLIC_URL_PID: http://127.0.0.1:4401
+      SANDBOX_PUBLIC_URL_WALLET: http://127.0.0.1:4402
+      SANDBOX_PUBLIC_URL_PLATFORM: http://127.0.0.1:4403
+      SANDBOX_PUBLIC_URL_BANK: http://127.0.0.1:4404
+    ports:
+      - "127.0.0.1:4400-4404:4400-4404"

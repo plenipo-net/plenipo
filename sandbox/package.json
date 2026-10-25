@@ -1,0 +1,42 @@
+{
+  "name": "plenipo-sandbox",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Plenipo simulation environment: a PID provider, a wallet, an agent platform, a bank and AI agents talking over HTTP.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "scripts": {
+    "lib": "npm --prefix .. run build",
+    "sandbox": "npm run lib --silent && tsx src/main.ts",
+    "scenarios": "npm run lib --silent && tsx src/run-scenarios.ts",
+    "agent": "npm run lib --silent && tsx src/agent/cli.ts",
+    "test": "npm run build:bridge --silent && vitest run",
+    "typecheck": "npm run lib --silent && tsc --noEmit",
+    "rp-cert": "npm run lib --silent && tsx level2/make-rp-cert.ts",
+    "waltid-e2e": "npm run lib --silent && tsx level2/waltid-e2e.ts",
+    "build:bridge": "npm run lib --silent && tsc -p tsconfig.bridge.json",
+    "bridge": "npm run build:bridge --silent && node dist/bridge.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.135.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "jose": "^6.2.12",
+    "plenipo": "file:..",
+    "qrcode": "^1.5.4",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/qrcode": "^1.5.6",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "optionalDependencies": {
+    "ioredis": "^6.0.0",
+    "pg": "^8.23.1"
+  }
+}

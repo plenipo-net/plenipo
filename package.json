@@ -1,0 +1,100 @@
+{
+  "name": "plenipo",
+  "version": "0.4.0",
+  "description": "Wallet-anchored mandates for AI agents: EUDI Wallet PID as root, enforced attenuation, expiry and revocation, MCP guard.",
+  "keywords": [
+    "eudi-wallet",
+    "eidas",
+    "it-wallet",
+    "sd-jwt",
+    "openid4vp",
+    "ai-agents",
+    "mcp",
+    "delegation",
+    "mandate",
+    "verifiable-credentials",
+    "agent-payments",
+    "eudi"
+  ],
+  "homepage": "https://plenipo.net",
+  "bugs": {
+    "url": "https://github.com/plenipo-net/plenipo/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/plenipo-net/plenipo.git"
+  },
+  "license": "Apache-2.0",
+  "author": "Fabio Lalli",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./mcp": {
+      "types": "./dist/mcp.d.ts",
+      "import": "./dist/mcp.js"
+    },
+    "./experimental": {
+      "types": "./dist/experimental.d.ts",
+      "import": "./dist/experimental.js"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "import": "./dist/testing.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "NOTICE",
+    "src/stores/schema.sql"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "demo": "tsx examples/demo.ts",
+    "vectors": "tsx scripts/generate-vectors.ts",
+    "example:gateway": "tsx examples/bank-gateway.ts"
+  },
+  "dependencies": {
+    "@owf/token-status-list": "^0.5.0",
+    "@peculiar/asn1-ocsp": "^2.11.0",
+    "@peculiar/asn1-schema": "^2.11.0",
+    "@peculiar/asn1-x509": "^2.11.0",
+    "@peculiar/x509": "^2.2.0",
+    "@sd-jwt/crypto-nodejs": "^0.19.0",
+    "@sd-jwt/sd-jwt-vc": "^0.23.0",
+    "canonicalize": "^5.1.0",
+    "jose": "^6.2.12",
+    "reflect-metadata": "^0.2.2",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.10",
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@owf/eudi-lote": "^0.5.0",
+    "@types/express": "^5.0.3",
+    "@types/node": "^26.6.5",
+    "@types/pg": "^8.23.1",
+    "express": "^5.1.0",
+    "fast-check": "^4.10.2",
+    "ioredis": "^6.0.0",
+    "pg": "^8.23.1",
+    "redis": "^6.3.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  }
+}

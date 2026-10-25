@@ -1,0 +1,12 @@
+# Drop-in override for walt.id's own stack (waltid-identity/docker-compose). Copy this file next to
+# their docker-compose.yaml, set PLENIPO_WALTID_CONFIG to the absolute path of
+# plenipo/sandbox/level2/waltid/config, then:
+#   docker compose --profile identity up wallet-api2
+# It replaces Wallet API 2's configuration with the Plenipo one: the plenipo_mandate transaction data
+# profile, the sandbox RP CA as x509_san_dns trust anchor, no accounts, in-memory stores.
+services:
+  wallet-api2:
+    volumes: !override
+      - ${PLENIPO_WALTID_CONFIG:?set PLENIPO_WALTID_CONFIG to plenipo/sandbox/level2/waltid/config}:/waltid-wallet-api2/config:ro
+    environment:
+      WALLET_API2_PORT: "7006"
