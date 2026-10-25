@@ -4,8 +4,9 @@ Plenipo is experimental. This is the direction, not a commitment to dates.
 
 ## Next
 
-- Interoperability with real wallets: walt.id first, then the EUDI reference wallet and IT-Wallet as
-  they open to relying parties, with the results published in [docs/interop.md](docs/interop.md).
+- Interoperability with real wallets: walt.id Wallet API 2 works (October 2026); next the EUDI
+  reference wallet and IT-Wallet as they open to relying parties, with the results published in
+  [docs/interop.md](docs/interop.md).
 - A profile for wallets that cannot show a new transaction data type, using the OpenID4VP
   `transaction_data` mechanism they already support.
 - Verifier as a service: a container image with configuration, health checks and metrics.
