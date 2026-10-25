@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.4.1 (25 October 2026)
+
+Documentation and release process only; the library code is unchanged from 0.4.0.
+- README: new "Why Plenipo" section and a link to the npm package.
+- Releases: a version tag publishes to npm through trusted publishing and creates the GitHub release
+  from this file.
+- Dependabot: weekly grouped updates for the library, the sandbox and GitHub Actions.
+
 ## 0.4.0 (25 October 2026, first public release)
 
 Breaking

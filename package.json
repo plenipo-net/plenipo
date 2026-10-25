@@ -1,6 +1,6 @@
 {
   "name": "plenipo",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Wallet-anchored mandates for AI agents: EUDI Wallet PID as root, enforced attenuation, expiry and revocation, MCP guard.",
   "keywords": [
     "eudi-wallet",
