@@ -259,6 +259,10 @@ IPs from `fly ips list`). The remote MCP URL is `https://mcp.sandbox.plenipo.net
 rotate the token with `fly secrets set` if it is abused. Keep one machine: the state is in memory, and
 `SANDBOX_RESTART_AT` restarts it clean every night.
 
+After the first deploy, `.github/workflows/deploy-sandbox.yml` deploys again on every merge to `main`
+that touches the sandbox or the library, once the repository has the secret `FLY_API_TOKEN`
+(`fly tokens create deploy --app plenipo-sandbox --expiry 8760h`).
+
 To run agents and scenarios against the public sandbox, open a shell in the container
 (`docker compose exec sandbox sh`) and use `npm run scenarios -- --attach` or `npm run agent`
 there: the container already has `SANDBOX_ADMIN_TOKEN` and `PLENIPO_BANK_HOST`. The sandbox wallet

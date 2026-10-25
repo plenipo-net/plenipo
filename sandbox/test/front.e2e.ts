@@ -64,7 +64,7 @@ describe('front door', () => {
     });
     expect(init.status).toBe(200);
     expect(init.headers['mcp-session-id']).toBeTruthy();
-    expect(init.body).toMatch(/Demo code of this session: [A-Z2-9]{6}/);
+    expect(init.body).toMatch(/public Plenipo sandbox/);
   });
 
   it('answers the health check on any host', async () => {

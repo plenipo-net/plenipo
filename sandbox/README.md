@@ -181,11 +181,14 @@ for MCP clients that connect to a URL instead of starting a process (Claude on t
 connector, Claude Desktop remote connectors). The endpoint is `/mcp`, or `/mcp/<SANDBOX_MCP_TOKEN>`
 when a token is set.
 
-Every MCP session gets its own bridge: its own agent key, mandate request and mandate, in memory, gone
-when the session closes or stays idle for two hours. Every session also gets a demo code of six
-characters, given to Claude in the server instructions and in the `request_mandate` answer. The
-bridge tags its dashboard events with the code, and the dashboard follows the request and mandate ids
-through the platform, wallet and bank events, so one session can be watched on its own:
+Every MCP session gets its own bridge. Its first `request_mandate` starts a journey (agent key, mandate
+request, mandate) under a demo code of six characters, given to Claude in that answer and in every
+`mandate_status`. A client may open several connections for one conversation, so the journey belongs
+to the code, not to the connection: a later connection continues it with `mandate_status` and
+`demo_code` (journeys are kept 24 hours, in memory). Connections that never call a tool get no code,
+leave nothing in the feeds and close after 10 minutes; used ones after two idle hours. The bridge tags
+its dashboard events with the code, and the dashboard follows the request and mandate ids through the
+platform, wallet and bank events, so one journey can be watched on its own:
 
 | URL on the dashboard | What |
 | --- | --- |
@@ -200,10 +203,16 @@ that code's feed like a Claude session does. The two scenarios that change state
 (`expired` moves the bank clock, `pid-revoked` revokes a PID) are not offered. Ten runs per hour per
 address, three at a time.
 
-Limits for a public host: at most 200 open sessions (`SANDBOX_MAX_SESSIONS`), 20 new sessions per hour
-and 240 requests per minute from one address (taken from `SANDBOX_CLIENT_IP_HEADER` behind a proxy).
-When `SANDBOX_ADMIN_TOKEN` is set, posting dashboard events needs it, so nobody else can write into a
-session's feed.
+Limits for a public host: at most 500 open sessions (`SANDBOX_MAX_SESSIONS`), 300 new sessions per hour
+for all clients together, 120 requests per minute on one session. Remote MCP clients connect from
+their provider's servers, so the client address (`SANDBOX_CLIENT_IP_HEADER` behind a proxy) limits
+only the scenario runs, which come from visitors' browsers. When `SANDBOX_ADMIN_TOKEN` is set, posting
+dashboard events needs it, so nobody else can write into a session's feed.
+
+With `SANDBOX_ACCOUNT_SCOPE=mandate` the bank opens a copy of the person's account for every root
+mandate, with the opening balance and every bill unpaid; delegated mandates use their root's. Visitors
+of a public sandbox then never find each other's payments: two conversations paying "my electricity
+bill" both find it open.
 
 ## The LLM agent
 
@@ -255,10 +264,11 @@ the guard checks the invocation against the actual call regardless.
 | `ANTHROPIC_API_KEY`, `PLENIPO_AGENT_MODEL` | none, `claude-sonnet-5-5` | LLM agent |
 | `SANDBOX_AGENT_GATEWAY` | off | `1`: serve the hosted MCP gateway on `SANDBOX_PORT_AGENT` (4405) |
 | `SANDBOX_PUBLIC_SCENARIOS` | off | `1`: visitors may run the scripted scenarios through the gateway, each under its own demo code |
-| `SANDBOX_REFILL_SECONDS` | none | Public sandbox: this often, accounts below half their opening balance get it back |
+| `SANDBOX_ACCOUNT_SCOPE` | `person` | `mandate`: a fresh copy of the account per root mandate (public sandbox) |
+| `SANDBOX_REFILL_SECONDS` | none | With the `person` scope: this often, accounts below half their opening balance get it back |
 | `SANDBOX_MCP_TOKEN` | none | Secret path segment of the gateway endpoint: `/mcp/<token>` |
 | `SANDBOX_WATCH_URL` | the dashboard's `/demo/<code>` | Page where a person watches a session; the code is appended as `?code=` |
-| `SANDBOX_MAX_SESSIONS`, `SANDBOX_SESSION_IDLE_SECONDS` | 200, 7200 | Open gateway sessions, and when an idle one is closed |
+| `SANDBOX_MAX_SESSIONS`, `SANDBOX_SESSION_IDLE_SECONDS` | 500, 7200 | Open gateway sessions, and when an idle one that called a tool is closed |
 | `SANDBOX_CLIENT_IP_HEADER` | none | Header with the client address set by the proxy in front (`fly-client-ip` on Fly.io) |
 | `SANDBOX_DOMAIN`, `SANDBOX_FRONT_PORT`, `SANDBOX_FRONT_HOST` | none, none, `0.0.0.0` | Hosted: one public port dispatching by host name (`src/front.ts`) |
 | `SANDBOX_DEMO_LOGIN` | none | Hosted: `user:password` basic auth in front of everything a wallet, an MCP client or a showcase page does not need |

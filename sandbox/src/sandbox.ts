@@ -132,6 +132,7 @@ export async function startSandbox(options: SandboxOptions = {}): Promise<Sandbo
       sweepSeconds: options.sweepSeconds,
       adminToken: options.adminToken,
       refillSeconds: options.refillSeconds,
+      accountScope: options.accountScope,
     });
     started.push(bank);
     log(`bank on ${bank.url}`);
@@ -194,6 +195,7 @@ export async function startSandbox(options: SandboxOptions = {}): Promise<Sandbo
         port: port('agent'),
         platformUrl: platform.url,
         publicPlatformUrl: publicUrls.platform,
+        statusCacheSeconds,
         bankUrl: bank.url,
         dashboardUrl: dashboard.url,
         dashboardToken: options.adminToken,

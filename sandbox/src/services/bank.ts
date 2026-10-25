@@ -69,7 +69,16 @@ export interface BankOptions {
   adminToken?: string;
   /** Public sandbox: this often, accounts below half their opening balance get it back and their bills reopen. */
   refillSeconds?: number;
+  /**
+   * `person` (default): one account per person, shared by every mandate. `mandate`: one account per person and
+   * root mandate, opened with the opening balance and every bill unpaid, so that visitors of a public sandbox
+   * never find each other's payments. Delegated mandates use their root's account.
+   */
+  accountScope?: 'person' | 'mandate';
 }
+
+/** At most this many per-mandate accounts are kept; the least recently used goes first. */
+const MAX_MANDATE_ACCOUNTS = 5000;
 
 interface Account {
   person: Person;
@@ -135,6 +144,29 @@ export async function startBank(opts: BankOptions): Promise<BankService> {
         a.person.family_name === principal.family_name &&
         a.person.birthdate === principal.birthdate,
     );
+  }
+
+  const mandateAccounts = new Map<string, Account & { root: string }>();
+  /** The account an allowed call acts on: the person's, or with `accountScope: 'mandate'` its root mandate's. */
+  function accountFor(d: { principal: Record<string, unknown>; path: Array<{ mandate_id: string }> }): Account | undefined {
+    const base = accountOf(d.principal);
+    if (!base || opts.accountScope !== 'mandate') return base;
+    const root = d.path[0]?.mandate_id;
+    if (!root) return base;
+    const key = `${base.person.id}:${root}`;
+    let acct = mandateAccounts.get(key);
+    if (acct) {
+      mandateAccounts.delete(key);
+    } else {
+      acct = { ...base, root, balance: OPENING_BALANCES[base.person.id] ?? 100000, card: { ...base.card, blocked: false }, transactions: [], paid: new Set() };
+      if (mandateAccounts.size >= MAX_MANDATE_ACCOUNTS) mandateAccounts.delete(mandateAccounts.keys().next().value!);
+    }
+    mandateAccounts.set(key, acct);
+    return acct;
+  }
+  /** The accounts to show on the bank page: the people's, or the most recent per-mandate ones. */
+  function shownAccounts(): Array<Account & { root?: string }> {
+    return opts.accountScope === 'mandate' ? [...mandateAccounts.values()].reverse().slice(0, 6) : [...accounts.values()];
   }
 
   /** The bank's clock, in seconds: the system clock, moved by the admin offset to show expiry. */
@@ -221,9 +253,15 @@ export async function startBank(opts: BankOptions): Promise<BankService> {
     });
     const lines = payees.map(
       (p) =>
-        `${p.payee} (${p.name}, ${p.category})${p.open_bills.length ? ': open bills ' + p.open_bills.map((b) => `${formatEuro(b.amount_cents)} for ${b.period}, due ${b.due}${b.note ? `. Note on the bill: "${b.note}"` : ''}`).join('; ') : ''}`,
+        `${p.payee} (${p.name}, ${p.category}): ${p.open_bills.length ? 'open bills ' + p.open_bills.map((b) => `${formatEuro(b.amount_cents)} for ${b.period}, due ${b.due}${b.note ? `. Note on the bill: "${b.note}"` : ''}`).join('; ') : 'no open bill'}`,
     );
-    return ok({ payees }, lines.join('\n'));
+    // Said in words, so an agent never reads a missing bill as a paid one.
+    const open = payees.flatMap((p) => p.open_bills);
+    const who = `${acct.person.given_name} ${acct.person.family_name}`;
+    const summary = open.length
+      ? `Open bills for ${who}: ${open.length}, total ${formatEuro(open.reduce((t, b) => t + b.amount_cents, 0))}.`
+      : `No open bills for ${who}${category ? ` in ${category}` : ''}. This says nothing about who paid them or when: the account's payments are not listed here.`;
+    return ok({ payees, open_bills_count: open.length }, [summary, ...lines].join('\n'));
   }
 
   function transfer(acct: Account, a: { payee: string; amount_cents: number; reference: string }, mandateId?: string): ToolResult {
@@ -299,7 +337,7 @@ export async function startBank(opts: BankOptions): Promise<BankService> {
       const guarded = guardTool<z.infer<z.ZodObject<S>>>(
         // The guard hands the verified decision to the handler: the principal identifies the account.
         async (args, _extra, d) => {
-          const acct = accountOf(d.principal);
+          const acct = accountFor(d);
           if (!acct) return fail('no_account', 'This bank holds no account for the person who granted the mandate.');
           const result = run(acct, args, d.invocation.mandate);
           // Recorded before the guard settles the reservation: `spent` includes this call as pending.
@@ -401,7 +439,7 @@ export async function startBank(opts: BankOptions): Promise<BankService> {
     });
     recordDecision('rest', tool, d, call, invocation);
     if (d.decision === 'DENY') return sendJson(res, 403, { decision: 'DENY', code: d.code, reason: d.reason });
-    const acct = accountOf(d.principal);
+    const acct = accountFor(d);
     // As in guardTool: a throw is an unknown outcome, so the reservation stays pending for the sweep.
     const result = acct ? run(acct, d.invocation.mandate) : fail('no_account', 'no account for this person');
     if (d.reservation) {
@@ -428,7 +466,7 @@ export async function startBank(opts: BankOptions): Promise<BankService> {
 
   // ---- Admin and pages ----
   router.get('/events', (req, res) => sendJson(res, 200, eventsHandler(events)(req)));
-  router.get('/api/accounts', (_req, res) => sendJson(res, 200, [...accounts.values()].map(accountView)));
+  router.get('/api/accounts', (_req, res) => sendJson(res, 200, shownAccounts().map(accountView)));
   router.get('/admin/clock', (_req, res) => sendJson(res, 200, { offset_seconds: clock.offset, now: nowSeconds() + clock.offset }));
   router.post('/admin/clock', async (req, res) => {
     checkAdmin(req, opts.adminToken);
@@ -441,9 +479,10 @@ export async function startBank(opts: BankOptions): Promise<BankService> {
   });
   router.get('/', (_req, res) => sendHtml(res, homePage()));
 
-  function accountView(a: Account) {
+  function accountView(a: Account & { root?: string }) {
     return {
       person: `${a.person.given_name} ${a.person.family_name}`,
+      ...(a.root ? { mandate: a.root } : {}),
       iban: a.iban,
       balance_cents: a.balance,
       card_blocked: a.card.blocked,
@@ -452,9 +491,9 @@ export async function startBank(opts: BankOptions): Promise<BankService> {
   }
 
   function homePage(): string {
-    const accts = [...accounts.values()]
+    const accts = shownAccounts()
       .map(
-        (a) => `<div class="card"><h2>${escapeHtml(a.person.given_name)} ${escapeHtml(a.person.family_name)}</h2>
+        (a) => `<div class="card"><h2>${escapeHtml(a.person.given_name)} ${escapeHtml(a.person.family_name)}${a.root ? ` <span class="pill">mandate ${escapeHtml(a.root.slice(0, 8))}</span>` : ''}</h2>
 <dl class="kv"><dt>IBAN</dt><dd class="mono">${escapeHtml(a.iban)}</dd><dt>Balance</dt><dd style="font-size:20px;font-weight:650">${formatEuro(a.balance)}</dd>
 <dt>Card</dt><dd>**** ${a.card.last4} ${a.card.blocked ? '<span class="badge b-deny">blocked</span>' : '<span class="badge b-allow">active</span>'}</dd></dl>
 <h3>Recent payments</h3><table>${a.transactions.slice(0, 6).map((t) => `<tr><td class="mono">${escapeHtml(t.at.slice(11, 19))}</td><td>${escapeHtml(t.payee)}</td><td>${formatEuro(t.amount)}</td></tr>`).join('') || '<tr><td class="muted">none</td></tr>'}</table></div>`,
@@ -476,7 +515,7 @@ export async function startBank(opts: BankOptions): Promise<BankService> {
       subtitle: `Accounts, payee register, PSD2-like API and MCP server at /mcp · ${opts.bankHost}`,
       head: '<meta http-equiv="refresh" content="3">',
       nav: [['Accounts API', '/api/accounts'], ['Events', '/events']],
-      body: `<div class="grid cols-2">${accts}</div>
+      body: `${opts.accountScope === 'mandate' ? '<p class="notice">Public sandbox: every mandate gets its own copy of the account, with the opening balance and every bill unpaid. The latest ones are shown.</p>' : ''}<div class="grid cols-2">${accts || '<div class="card muted">No mandate has used the bank yet.</div>'}</div>
 <div class="grid cols-2" style="margin-top:16px"><div class="card"><h2>Payee register</h2><table>${PAYEES.map((p) => `<tr><td class="mono">${escapeHtml(p.id)}</td><td>${escapeHtml(p.name)}</td><td class="muted">${p.category}</td></tr>`).join('')}</table></div>
 <div class="card"><h2>Latest decisions</h2><table>${decisions || '<tr><td class="muted">none yet</td></tr>'}</table>${clock.offset ? `<p class="notice">Bank clock moved forward by ${clock.offset} s</p>` : ''}</div></div>`,
     });

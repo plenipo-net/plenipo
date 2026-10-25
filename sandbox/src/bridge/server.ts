@@ -22,7 +22,10 @@ const OWN_TOOLS = [
         per_payment_eur: { type: 'number', description: 'Maximum amount of one payment, in euro' },
         total_eur: { type: 'number', description: 'Maximum total of all payments, in euro' },
         days: { type: 'number', description: 'How long the mandate lasts, in days (at most 90)' },
-        purpose: { type: 'string', description: 'What the mandate is for, in words the person will read in the wallet' },
+        purpose: {
+          type: 'string',
+          description: 'What the mandate is for, in words the person will read in the wallet: write it in the language you are using with the person',
+        },
         actions: {
           type: 'array',
           items: { type: 'string' },
@@ -35,8 +38,13 @@ const OWN_TOOLS = [
   },
   {
     name: 'mandate_status',
-    description: 'Whether the person approved the mandate, and what it allows (payees, limits, expiry). Call it after request_mandate.',
-    inputSchema: { type: 'object', properties: {} },
+    description:
+      'Whether the person approved the mandate, and what it allows (payees, limits, expiry). Call it after request_mandate. ' +
+      'On the public sandbox, a new connection can continue an earlier journey by passing its demo_code.',
+    inputSchema: {
+      type: 'object',
+      properties: { demo_code: { type: 'string', description: 'Optional: the six-character demo code of a journey started in an earlier connection' } },
+    },
   },
   {
     name: 'revoke_mandate',
@@ -63,9 +71,10 @@ function result(t: ToolText) {
 
 export const BRIDGE_INSTRUCTIONS =
   'Tools to act at the person\'s bank under a Plenipo mandate. First request_mandate and have the person approve it in their wallet, ' +
-  'then mandate_status, then the bank tools. Never try to work around a DENY: report it to the person.';
+  'then mandate_status, then the bank tools. Never try to work around a DENY: report it to the person. ' +
+  'Never say that something was paid unless a transfer under this mandate returned ALLOW; a bill missing from list_payees says nothing about who paid it.';
 
-export function createBridgeServer(core: BridgeCore, opts: { instructions?: string } = {}): Server {
+export function createBridgeServer(core: BridgeCore, opts: { instructions?: string; onToolCall?: (name: string) => void } = {}): Server {
   const server = new Server(
     { name: 'plenipo-bank', version: '0.1.0' },
     {
@@ -86,12 +95,13 @@ export function createBridgeServer(core: BridgeCore, opts: { instructions?: stri
 
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
     const args = (req.params.arguments ?? {}) as Record<string, unknown>;
+    opts.onToolCall?.(req.params.name);
     try {
       switch (req.params.name) {
         case 'request_mandate':
           return result(await core.requestMandate(args as never));
         case 'mandate_status':
-          return result(await core.mandateStatus());
+          return result(await core.mandateStatus(args as { demo_code?: string }));
         case 'revoke_mandate':
           return result(await core.revokeMandate());
         case 'explain_last_decision':
