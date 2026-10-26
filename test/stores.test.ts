@@ -35,6 +35,7 @@ import {
   nonceRetentionSeconds,
   postgresSchema,
   POSTGRES_SCHEMA_SQL,
+  POSTGRES_SCHEMA_VERSION,
   PostgresMandateSessionStore,
   PostgresNonceStore,
   PostgresRevocationRegistry,
@@ -687,7 +688,7 @@ describe.skipIf(!pgEngine.ok)(`${pgLabel} setup`, () => {
       expect(await new PostgresSpendingLedger(c).spent('k', 'EUR')).toBe(0);
 
       await Promise.all([migratePostgres(c), migratePostgres(c)]);
-      expect((await c.query('SELECT version FROM plenipo_schema_meta')).rows).toEqual([{ version: 3 }]);
+      expect((await c.query('SELECT version FROM plenipo_schema_meta')).rows).toEqual([{ version: POSTGRES_SCHEMA_VERSION }]);
       const ledger = new PostgresSpendingLedger(c, { pendingTtlSeconds: 0.05 });
       // The legacy row is under-counted (its outcome is unknown): it is on the reconciliation list and
       // survives purges until reconciled.
@@ -725,7 +726,7 @@ describe.skipIf(!pgEngine.ok)(`${pgLabel} setup`, () => {
       expect((await c.query(`SELECT plenipo_ledger_settle($1::uuid, 'commit') AS s`, [id])).rows).toEqual([{ s: 'released' }]);
 
       await Promise.all([migratePostgres(c), migratePostgres(c)]);
-      expect((await c.query('SELECT version FROM plenipo_schema_meta')).rows).toEqual([{ version: 3 }]);
+      expect((await c.query('SELECT version FROM plenipo_schema_meta')).rows).toEqual([{ version: POSTGRES_SCHEMA_VERSION }]);
       const ledger = new PostgresSpendingLedger(c);
       expect(await ledger.reconcile(id, 'executed')).toBe('committed');
       expect(await ledger.spent('k', 'EUR')).toBe(60);

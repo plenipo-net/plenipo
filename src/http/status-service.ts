@@ -13,7 +13,7 @@ import { decodeJwt } from 'jose';
 import { randomInt } from 'node:crypto';
 import type { AuditLog } from '../audit.js';
 import { sha256 } from '../encoding.js';
-import { StatusListPublisher, STATUS_INVALID, STATUS_SUSPENDED, STATUS_VALID, type StatusReference } from '../status.js';
+import { DEFAULT_STATUS_TTL_SECONDS, StatusListPublisher, STATUS_INVALID, STATUS_SUSPENDED, STATUS_VALID, type StatusReference } from '../status.js';
 import { GATEWAY_PROBLEMS, problemFromSpec, problemResponse, type ProblemSpec } from './errors.js';
 
 export type StatusValue = 'valid' | 'invalid' | 'suspended';
@@ -107,7 +107,12 @@ export interface ManagedStatusListOptions {
   x5c?: string[];
   /** Token lifetime in seconds. Default 1 hour. */
   lifetimeSeconds?: number;
-  /** Cache hint for verifiers, in seconds. Default 300. */
+  /**
+   * Cache hint for verifiers and HTTP caches, in seconds (the token `ttl`, and the bound on `Cache-Control`).
+   * It is how long a revocation may go unnoticed by a verifier that caches. Default 60
+   * (`DEFAULT_STATUS_TTL_SECONDS`); for payment tools, verifiers can also require a fresher list per call
+   * with `maxStatusAgeSeconds`.
+   */
   ttlSeconds?: number;
 }
 
@@ -171,7 +176,7 @@ export class ManagedStatusList implements StatusListSource {
     await this.init();
     const state = await this.opts.store.get(this.opts.id);
     if (!state) throw new Error('status list state is missing');
-    const ttl = this.opts.ttlSeconds ?? 300;
+    const ttl = this.opts.ttlSeconds ?? DEFAULT_STATUS_TTL_SECONDS;
     const lifetime = this.opts.lifetimeSeconds ?? 3600;
     const c = this.cached;
     if (c && c.version === state.version && now >= c.iat && now < c.iat + Math.min(ttl, Math.floor(lifetime / 2))) return c.token;

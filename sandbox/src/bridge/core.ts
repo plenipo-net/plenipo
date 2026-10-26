@@ -8,6 +8,9 @@
  *   then keeps the approved chain.
  * - The bank's MCP tools are mirrored: each call is signed for exactly its arguments and the chain, sent
  *   with the Plenipo `_meta`, and the bank's answer (or DENY) is returned verbatim.
+ * - Tools the bank marks `idempotent` get an idempotency key, saved in the state before the call goes out.
+ *   When the outcome stays unknown (the bank did not answer, the host restarted), the next call to the same
+ *   tool with the same arguments reuses the key, so the bank answers it instead of paying a second time.
  *
  * State goes through a `BridgeStateStore`: a file for the stdio bridge, a per-session store for a hosted
  * variant. Nothing here writes anywhere else.
@@ -15,7 +18,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { exportJWK, generateKeyPair, importJWK, type JWK } from 'jose';
-import { chainHash, createInvocation, peekInvocation, type Mandate, type MandateChain } from 'plenipo';
+import { argsHash, chainHash, createInvocation, newIdempotencyKey, peekInvocation, type Mandate, type MandateChain } from 'plenipo';
 import { META_KEY } from 'plenipo/mcp';
 import { BINDING_META_KEY, bindCall, invocationFields, isToolBinding, type ToolBinding } from '../binding.js';
 
@@ -26,13 +29,18 @@ export interface BridgeState {
   /** The approved mandate and its chain. */
   mandate?: { id: string; chain: MandateChain; mandate: Mandate; approvedAt: string };
   last?: LastDecision;
+  /**
+   * The last call to an idempotent tool whose outcome is not known yet. Written before the call is sent, so
+   * it survives a crash or a restart of the host; cleared once the bank's answer settles the outcome.
+   */
+  retry?: { tool: string; args_hash: string; idem: string; mandate_id: string; at: string };
 }
 
 export interface LastDecision {
   at: string;
   tool: string;
   args: Record<string, unknown>;
-  invocation?: { action: string; counterparty?: string; amount?: { value: number; currency: string }; aud: string; nonce: string; chain_hash?: string };
+  invocation?: { action: string; counterparty?: string; amount?: { value: number; currency: string }; aud: string; nonce: string; chain_hash?: string; idem?: string };
   decision: 'ALLOW' | 'DENY' | 'ERROR' | 'NOT_SENT';
   code?: string;
   text: string;
@@ -130,7 +138,14 @@ export const DENY_EXPLANATIONS: Record<string, string> = {
   INVOCATION_STALE: 'the signed call is too old or from the future (clock problem)',
   STATUS_UNAVAILABLE: 'the bank could not check whether the mandate is still valid; trying again later may work',
   MALFORMED: 'the call or its authorization could not be read',
+  IDEMPOTENCY_IN_PROGRESS: 'the same call is still being processed by the bank; ask again in a few seconds',
+  IDEMPOTENCY_UNRESOLVED: 'the bank does not know yet whether the earlier attempt of this call was executed; it must check before anything else happens',
+  IDEMPOTENCY_CONFLICT: 'this retry does not match the call it claims to repeat',
+  ALREADY_EXECUTED: 'the earlier attempt of this call was already executed: nothing was paid a second time',
 };
+
+/** Deny codes after which the outcome of the call is still open: the next identical call is a retry. */
+const STILL_OPEN = new Set(['IDEMPOTENCY_IN_PROGRESS', 'IDEMPOTENCY_UNRESOLVED', 'STATUS_UNAVAILABLE', 'INTERNAL']);
 
 const euroToCents = (v: number) => Math.round(v * 100);
 
@@ -339,7 +354,7 @@ export class BridgeCore {
       `${last.decision}${last.code ? ` ${last.code}` : ''} for ${last.tool} at ${last.at}.`,
       last.code && DENY_EXPLANATIONS[last.code] ? `Why: ${DENY_EXPLANATIONS[last.code]}.` : '',
       inv
-        ? `Signed invocation: action ${inv.action}${inv.counterparty ? `, payee ${inv.counterparty}` : ', no payee'}${inv.amount ? `, amount ${(inv.amount.value / 100).toFixed(2)} ${inv.amount.currency}` : ', no amount'}, audience ${inv.aud}, nonce ${inv.nonce}, chain hash ${inv.chain_hash ?? '-'}.`
+        ? `Signed invocation: action ${inv.action}${inv.counterparty ? `, payee ${inv.counterparty}` : ', no payee'}${inv.amount ? `, amount ${(inv.amount.value / 100).toFixed(2)} ${inv.amount.currency}` : ', no amount'}, audience ${inv.aud}, nonce ${inv.nonce}, chain hash ${inv.chain_hash ?? '-'}${inv.idem ? `, idempotency key ${inv.idem}` : ''}.`
         : 'Nothing was signed.',
       `Arguments: ${JSON.stringify(last.args)}`,
       `Bank answer: ${last.text}`,
@@ -396,31 +411,66 @@ export class BridgeCore {
     const args = Object.fromEntries(Object.entries(rawArgs ?? {}).filter(([k, v]) => props.includes(k) && v !== undefined));
     const chain = state.mandate.chain;
     const key = await importJWK(state.agent.privateJwk, 'ES256');
+    // One key per intention: a call identical to one whose outcome is still unknown is its retry.
+    let idem: string | undefined;
+    if (tool.binding.idempotent) {
+      const fingerprint = argsHash({ tool: name, args });
+      const open = state.retry;
+      idem = open && open.tool === name && open.args_hash === fingerprint && open.mandate_id === state.mandate.id ? open.idem : newIdempotencyKey();
+      state.retry = { tool: name, args_hash: fingerprint, idem, mandate_id: state.mandate.id, at: new Date().toISOString() };
+      await this.store.save(state);
+    }
     const invocation = await createInvocation(key as CryptoKey, {
       mandateId: state.mandate.id,
       ...invocationFields(bindCall(tool.binding, args)),
       aud: tool.binding.audience,
       args,
       chain,
+      ...(idem ? { idempotencyKey: idem } : {}),
     });
     const inv = peekInvocation(invocation);
-    const summary = { action: inv.action, counterparty: inv.counterparty, amount: inv.amount, aud: inv.aud, nonce: inv.nonce, chain_hash: inv.chain_hash ?? chainHash(chain) };
+    const summary = {
+      action: inv.action,
+      counterparty: inv.counterparty,
+      amount: inv.amount,
+      aud: inv.aud,
+      nonce: inv.nonce,
+      chain_hash: inv.chain_hash ?? chainHash(chain),
+      ...(inv.idem ? { idem: inv.idem } : {}),
+    };
+    /** Clears the open retry once the bank's answer settles the outcome of this call. */
+    const settled = async () => {
+      if (!idem) return;
+      const s = await this.store.load();
+      if (s.retry?.idem === idem) {
+        delete s.retry;
+        await this.store.save(s);
+      }
+    };
     await this.note('tool_call', { tool: name, args, mandate_id: state.mandate.id });
     let text: string;
     let isError: boolean;
     let data: Record<string, unknown> | undefined;
+    let replay = false;
     try {
       const res = await (await this.bankClient()).callTool({ name, arguments: args, _meta: { [META_KEY]: { chain, invocation } } });
       text = ((res.content as Array<{ type: string; text?: string }>) ?? []).map((c) => c.text ?? '').join('\n');
       isError = Boolean(res.isError);
       data = res.structuredContent as Record<string, unknown> | undefined;
+      replay = (res._meta as Record<string, unknown> | undefined)?.['plenipo/replay'] === true;
     } catch (e) {
       this.bank = undefined;
-      text = `The bank could not be reached: ${(e as Error).message}. The outcome is unknown; check the balance before retrying.`;
+      text = idem
+        ? `The bank could not be reached: ${(e as Error).message}. The outcome is unknown. Calling ${name} again with the same arguments is safe: it is the same call, and the bank will not pay twice.`
+        : `The bank could not be reached: ${(e as Error).message}. The outcome is unknown; check the balance before retrying.`;
       await record({ args, invocation: summary, decision: 'ERROR', text });
       return { isError: true, text };
     }
     const deny = (data?.plenipo as { decision?: string; code?: string } | undefined)?.decision === 'DENY' ? (data!.plenipo as { code: string }).code : undefined;
+    // An error from the tool itself may follow a payment that went out: keep the key for the retry. Any other
+    // answer settles the call, and the next identical call is a new payment with a new key.
+    if (!(deny ? STILL_OPEN.has(deny) : isError)) await settled();
+    if (replay) text = `This call had already been executed: the bank returned the original result instead of paying again.\n${text}`;
     await record({ args, invocation: summary, decision: deny ? 'DENY' : isError ? 'ERROR' : 'ALLOW', code: deny ?? (isError ? String(data?.error ?? '') || undefined : undefined), text });
     this.log(`${name}: ${deny ? `DENY ${deny}` : isError ? 'error' : 'ALLOW'}`);
     await this.note('tool_result', {

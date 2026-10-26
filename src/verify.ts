@@ -4,6 +4,7 @@ import { DelegationError, isSdJwtDelegation, verifyDelegateSdJwt, type Delegatio
 import { argsHash, chainHash } from './invocation.js';
 import { nowSeconds } from './mandate.js';
 import type { NonceStore, RevocationRegistry, SpendingLedger } from './registry.js';
+import { idempotencyScope, requestFingerprint, type IdempotencyRecord, type IdempotencyStore } from './idempotency.js';
 import type { RepresentationVerifyOptions } from './legal.js';
 import { checkAttestationCertificates, checkAttestationStatus, checkPidStatus, RootError, verifyRoot, type EmandateVerifyOptions } from './root.js';
 import { checkStatus, StatusUnavailableError, httpsOrigin, type StatusFetcher, type StatusListCache } from './status.js';
@@ -71,6 +72,19 @@ export interface VerifyOptions {
   /** Fetches status list tokens. Default: HTTPS GET. */
   statusFetcher?: StatusFetcher;
   statusCache?: StatusListCache;
+  /**
+   * Maximum age, in seconds, of a cached status list (PID, attestations, mandates) for this verification.
+   * A cached list obtained earlier is fetched again, and the fetcher asks HTTP caches for a copy no older
+   * than that. Set it on calls that move money, so a revocation takes effect within this bound instead of
+   * the cache lifetime; `0` checks the origin on every call. Default: the cache decides.
+   */
+  maxStatusAgeSeconds?: number;
+  /**
+   * Keeps idempotency keys (see `src/idempotency.ts`). Needed to accept an invocation that carries `idem`:
+   * without a store the key would have no effect and a retry would run again, so such an invocation is
+   * refused with CONFIGURATION. On ALLOW the decision carries `idempotency`, the attempt the caller must end.
+   */
+  idempotency?: IdempotencyStore;
   /** This relying party's identifier; must equal the invocation `aud`. */
   audience: string;
   /** Single-use nonce store. Required: without it a captured invocation could be replayed. */
@@ -129,9 +143,68 @@ class Deny extends Error {
     readonly at?: number,
     /** Internal detail for logs; never sent to the caller by the MCP guard. */
     readonly detail?: string,
+    /** With ALREADY_EXECUTED: the stored result of the attempt that ran. */
+    readonly replay?: { result?: string },
   ) {
     super(message);
   }
+}
+
+/** The part of a shared ledger that tells what became of a reservation (Postgres and Redis ledgers have it). */
+interface ReservationLookup {
+  reservation(id: string): Promise<{ state: string } | undefined>;
+}
+
+function canLookUp(ledger: SpendingLedger | undefined): ledger is SpendingLedger & ReservationLookup {
+  return typeof (ledger as Partial<ReservationLookup> | undefined)?.reservation === 'function';
+}
+
+/**
+ * Claims the idempotency key of an invocation for this attempt, or explains why it cannot run. A key held by
+ * an attempt of unknown outcome follows the ledger when it can: a committed reservation means the action
+ * ran, a released one means it did not (the ledger releases only on certainty), which frees the key.
+ */
+async function claimIdempotencyKey(
+  store: IdempotencyStore,
+  key: string,
+  fingerprint: string,
+  ledger: SpendingLedger | undefined,
+  consumeNonce: () => Promise<void>,
+): Promise<{ key: string; attempt: string }> {
+  const alreadyExecuted = async (record: IdempotencyRecord | undefined): Promise<never> => {
+    // The retry is a fresh invocation: burning its nonce keeps a copied retry from reading the result again.
+    await consumeNonce();
+    throw new Deny('ALREADY_EXECUTED', 'an earlier attempt with this idempotency key already executed', undefined, undefined, {
+      ...(record?.result !== undefined ? { result: record.result } : {}),
+    });
+  };
+  for (let round = 0; round < 2; round++) {
+    const claim = await store.claim(key, fingerprint);
+    if (claim.claimed) return { key, attempt: claim.attempt };
+    const record = claim.record;
+    if (record.fingerprint !== fingerprint) {
+      throw new Deny('IDEMPOTENCY_CONFLICT', 'the idempotency key was already used for a different request');
+    }
+    if (record.state === 'executed') return alreadyExecuted(record);
+    if (record.state === 'in_progress') {
+      throw new Deny('IDEMPOTENCY_IN_PROGRESS', 'an attempt with this idempotency key is still running');
+    }
+    // Unknown outcome, or an abandoned attempt.
+    if (record.reservation !== undefined && canLookUp(ledger)) {
+      const info = await ledger.reservation(record.reservation);
+      if (info?.state === 'committed') {
+        await store.resolve(key, 'executed');
+        return alreadyExecuted(undefined);
+      }
+      if (info?.state === 'released') {
+        await store.resolve(key, 'not_executed');
+        continue;
+      }
+    }
+    throw new Deny('IDEMPOTENCY_UNRESOLVED', 'the outcome of an earlier attempt with this idempotency key is not known yet');
+  }
+  // The key was freed and taken again by a concurrent attempt in between.
+  throw new Deny('IDEMPOTENCY_IN_PROGRESS', 'an attempt with this idempotency key is still running');
 }
 
 function statusOriginsOf(trust: TrustConfig): string[] {
@@ -159,6 +232,11 @@ export async function verifyAuthorization(
   const path: PathEntry[] = [];
   try {
     if (!opts?.nonces) throw new Deny('CONFIGURATION', 'a nonce store is required to prevent replay');
+    const maxStatusAge = opts.maxStatusAgeSeconds;
+    if (maxStatusAge !== undefined && (typeof maxStatusAge !== 'number' || !Number.isFinite(maxStatusAge) || maxStatusAge < 0)) {
+      throw new Deny('CONFIGURATION', 'maxStatusAgeSeconds must be a non-negative number of seconds');
+    }
+    const statusAge = maxStatusAge !== undefined ? { maxStatusAgeSeconds: maxStatusAge } : {};
     const now = opts.now ?? nowSeconds();
     const skew = opts.skewSeconds ?? 60;
     // A nonce must be remembered for as long as an invocation carrying it can still be accepted.
@@ -381,6 +459,7 @@ export async function verifyAuthorization(
           now,
           statusFetcher: opts.statusFetcher,
           statusCache: opts.statusCache,
+          ...statusAge,
         });
       } catch (e) {
         if (e instanceof RootError) throw new Deny(e.code, e.message, 0, e.detail);
@@ -397,7 +476,7 @@ export async function verifyAuthorization(
     }
     for (const d of root.deferredStatus ?? []) {
       try {
-        await checkAttestationStatus(d, { now, statusFetcher: opts.statusFetcher, statusCache: opts.statusCache });
+        await checkAttestationStatus(d, { now, statusFetcher: opts.statusFetcher, statusCache: opts.statusCache, ...statusAge });
       } catch (e) {
         if (e instanceof RootError) throw new Deny(e.code, e.message, 0, e.detail);
         throw e;
@@ -416,6 +495,7 @@ export async function verifyAuthorization(
           fetcher: opts.statusFetcher,
           now,
           cache: opts.statusCache,
+          ...(maxStatusAge !== undefined ? { maxAgeSeconds: maxStatusAge } : {}),
         });
       } catch (e) {
         throw new Deny(e instanceof StatusUnavailableError ? 'STATUS_UNAVAILABLE' : 'REVOKED', `status of mandate ${i} could not be verified`, i, (e as Error).message);
@@ -423,27 +503,50 @@ export async function verifyAuthorization(
       if (status !== 0) throw new Deny('REVOKED', `mandate ${i} is ${status === 2 ? 'suspended' : 'revoked'} in its status list`, i);
     }
 
-    // 7. Atomic reservation against every total limit in the chain.
-    let reservation: string | undefined;
-    if (needsLedger && inv.amount && opts.ledger) {
-      const entries = mandates.map((m) => ({ key: mandateHash(m), total: m.limits?.total }));
-      const r = await opts.ledger.reserve(entries, inv.amount);
-      if (r === null) throw new Deny('LIMIT_TOTAL', `amount ${inv.amount.value} would exceed a total limit in the chain`);
-      reservation = r;
+    // 7. Idempotency. After every check that can refuse the call, so a refused attempt never claims or blocks
+    //    a key; before the reservation, so the retry of an executed call is answered from its record instead
+    //    of reserving again.
+    let nonceConsumed = false;
+    const consumeNonce = async (): Promise<void> => {
+      const fresh = await opts.nonces.consume(inv.nonce);
+      if (!fresh) throw new Deny('REPLAY', 'invocation nonce was already used or was not issued');
+      nonceConsumed = true;
+    };
+    let idem: { key: string; attempt: string } | undefined;
+    if (inv.idem !== undefined) {
+      if (!opts.idempotency) {
+        throw new Deny('CONFIGURATION', 'the invocation carries an idempotency key and this service keeps no idempotency store');
+      }
+      idem = await claimIdempotencyKey(
+        opts.idempotency,
+        idempotencyScope(opts.audience, inv.chain_hash, inv.idem),
+        requestFingerprint(inv),
+        opts.ledger,
+        consumeNonce,
+      );
     }
 
-    // 8. Replay. Checked last, so a denied invocation does not burn its nonce.
-    // A store that throws must not leave the amount reserved: release, then let the error deny.
-    let fresh: boolean;
+    // Until ALLOW is returned nothing has run: every failure below gives the reservation and the key back.
+    let reservation: string | undefined;
     try {
-      fresh = await opts.nonces.consume(inv.nonce);
+      // 8. Atomic reservation against every total limit in the chain.
+      if (needsLedger && inv.amount && opts.ledger) {
+        const entries = mandates.map((m) => ({ key: mandateHash(m), total: m.limits?.total }));
+        const r = await opts.ledger.reserve(entries, inv.amount);
+        if (r === null) throw new Deny('LIMIT_TOTAL', `amount ${inv.amount.value} would exceed a total limit in the chain`);
+        reservation = r;
+        if (idem) await opts.idempotency!.attach(idem.key, idem.attempt, r);
+      }
+      // 9. Replay. Checked last, so a denied invocation does not burn its nonce.
+      if (!nonceConsumed) await consumeNonce();
     } catch (e) {
-      if (reservation && opts.ledger) await opts.ledger.release(reservation);
+      // Best effort: the original failure is what the caller must see. A reservation left pending keeps
+      // counting (safe side); a key left in progress turns unresolved after the lease (safe side too).
+      const ledger = opts.ledger;
+      const store = opts.idempotency;
+      if (reservation && ledger) await Promise.resolve().then(() => ledger.release(reservation!)).catch(() => undefined);
+      if (idem && store) await store.finish(idem.key, idem.attempt, 'not_executed').catch(() => undefined);
       throw e;
-    }
-    if (!fresh) {
-      if (reservation && opts.ledger) await opts.ledger.release(reservation);
-      throw new Deny('REPLAY', 'invocation nonce was already used or was not issued');
     }
 
     return {
@@ -457,6 +560,7 @@ export async function verifyAuthorization(
       mandates,
       invocation: inv,
       ...(reservation ? { reservation } : {}),
+      ...(idem ? { idempotency: idem } : {}),
       // Never throws: the reservation above must not be left behind by an identifier for policy engines.
       ...(root.holderJwk ? await calculateJwkThumbprint(root.holderJwk, 'sha256').then((t) => ({ pid_holder_jkt: t }), () => ({})) : {}),
     };
@@ -468,6 +572,7 @@ export async function verifyAuthorization(
         reason: e.message,
         ...(e.at !== undefined ? { at: e.at } : {}),
         ...(e.detail !== undefined ? { detail: e.detail } : {}),
+        ...(e.replay !== undefined ? { replay: e.replay } : {}),
         path,
       };
     }

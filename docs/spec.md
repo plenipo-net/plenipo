@@ -1,6 +1,6 @@
-# Plenipo profile 0.1
+# Plenipo profile 0.2
 
-Status: draft, implemented by Plenipo 0.4. This document defines the wire formats and the verification
+Status: draft, implemented by Plenipo 0.5. This document defines the wire formats and the verification
 rules a conforming implementation follows, so that an agent platform, a wallet integration and a relying
 party built by different people interoperate. The reasons behind the rules are in [design.md](design.md).
 
@@ -111,10 +111,45 @@ When the agent at the end of the chain acts, it signs a compact JWS with protect
 | `iat` | yes | Signing time. |
 | `chain_hash` | yes | See below. |
 | `args_hash` | no | hash(canonical JSON of the call arguments), `{}` when there are none. |
+| `idem` | no | Idempotency key: 16 to 128 characters of the base64url alphabet. Requires `args_hash`. |
 
-Members not listed here are ignored. `chain_hash` is hash of the canonical JSON of
+A verifier MUST refuse an invocation with a member not listed here (`MALFORMED`): a member it does not
+know could carry a constraint it would ignore. `chain_hash` is hash of the canonical JSON of
 `{ "typ": "plenipo-chain", "root": <root object>, "delegations": [ <delegation>, … ] }`, where the root
 object carries only the members it has. It binds the invocation to the exact chain it is presented with.
+
+### 5.1 Idempotency
+
+An agent that does not learn the outcome of a call (no answer, a crash of its host) cannot reuse the
+invocation: its nonce is single use and it goes stale. To retry safely it signs a new invocation, with a
+new `nonce` and `iat`, carrying the same `idem` as the first attempt. Every attempt of one intention
+carries the same `idem`; a different intention carries a different one. An agent SHOULD send `idem` only
+to a relying party that states it keeps idempotency keys, since a verifier of profile 0.1 ignores it.
+
+The relying party keeps each key under the scope hash of the canonical JSON of
+`{ "typ": "plenipo-idempotency", "aud": <aud>, "chain": <chain_hash>, "idem": <idem> }`, together with the
+fingerprint hash of the canonical JSON of the members `action`, `counterparty`, `amount` and `args_hash`
+that the invocation has. A key is free, held by an attempt that is running, held by an attempt whose
+outcome is unknown (including one that ran longer than the relying party's lease), or executed. A
+relying party that does not keep idempotency keys MUST refuse an invocation that carries `idem`
+(`CONFIGURATION`): accepting it would run a retry a second time.
+
+| The key is | Decision |
+| --- | --- |
+| free | the attempt claims it and verification continues |
+| held for a different fingerprint | `IDEMPOTENCY_CONFLICT` |
+| held by a running attempt | `IDEMPOTENCY_IN_PROGRESS` |
+| held by an attempt of unknown outcome | `IDEMPOTENCY_UNRESOLVED`, until the relying party establishes the outcome |
+| executed | `ALREADY_EXECUTED`; the relying party MAY return the stored result of the first attempt |
+
+When the relying party finishes an attempt it records the outcome: executed (the key stays executed for
+the relying party's retention period), not executed (the key is free again) or unknown (the key stays
+blocked until reconciled). It MUST NOT free a key unless it is certain the action did not run. When the
+attempt holds a spending reservation, a reconciliation of the reservation settles the key too: committed
+means executed, released means not executed.
+
+At most one attempt per key reaches the action: claiming a free key is atomic, also across instances that
+share a store.
 
 ## 6. Verification
 
@@ -131,8 +166,16 @@ The verifier runs these checks in order and stops at the first failure:
 7. Scope on every mandate of the chain: action, counterparty, currency, per-operation limit.
 8. Checks that need the network: revocation of the PID provider certificate when configured, the PID
    status list, and the status list of every mandate that has one.
-9. Spending: an atomic reservation against every total limit of the chain.
-10. Replay: the nonce is consumed last, so a denied invocation does not use up its nonce.
+9. Idempotency (section 5.1), when the invocation carries `idem`. For `ALREADY_EXECUTED` the nonce is
+   consumed first, so a copy of the retry cannot read the stored result again.
+10. Spending: an atomic reservation against every total limit of the chain.
+11. Replay: the nonce is consumed last, so a denied invocation does not use up its nonce. A failure in
+    steps 10 and 11 frees the idempotency key claimed in step 9.
+
+A verifier MAY cache status lists. The time a cached list is used bounds how long a revocation can go
+unnoticed, and a relying party MAY require a shorter bound for some calls (a maximum age of the list, `0`
+for a fresh list), typically those that move money. A list fetched for such a call SHOULD be requested
+with `Cache-Control: max-age=<bound>`, so HTTP caches on the way do not answer with an older copy.
 
 Checks that fetch anything over the network come after the invocation has been authenticated and
 scoped, so a caller without a valid invocation cannot make the verifier fetch URLs.
@@ -150,7 +193,9 @@ that failed (0 for the root):
 `EXPIRED`, `REVOKED`, `INVOCATION_SIGNATURE_INVALID`, `INVOCATION_MANDATE_MISMATCH`, `INVOCATION_STALE`,
 `AUDIENCE_MISMATCH`, `REPLAY`, `ACTION_NOT_PERMITTED`, `COUNTERPARTY_NOT_PERMITTED`, `CURRENCY_MISMATCH`,
 `LIMIT_PER_OPERATION`, `LIMIT_TOTAL`, `DISPLAY_MISMATCH`, `ROOT_POLICY`, `ATTESTATION_UNTRUSTED`,
-`ATTESTATION_INVALID`, `ATTESTATION_REVOKED`, `ROLE_EXCEEDED`, `STATUS_UNAVAILABLE`, `INTERNAL`.
+`ATTESTATION_INVALID`, `ATTESTATION_REVOKED`, `ROLE_EXCEEDED`, `STATUS_UNAVAILABLE`,
+`IDEMPOTENCY_CONFLICT`, `IDEMPOTENCY_IN_PROGRESS`, `IDEMPOTENCY_UNRESOLVED`, `ALREADY_EXECUTED`,
+`INTERNAL`.
 
 A verifier MUST deny when in doubt: an unreachable status list, a store that fails and an unknown member
 all lead to DENY.
@@ -168,13 +213,20 @@ A denial is answered with `application/problem+json` (RFC 9457). Its `type` is
 
 When a protected API reports whether it executed the operation, it does so with the response header
 `Plenipo-Outcome: executed | not-executed | unknown`. The gateway commits the spending reservation on
-`executed`, releases it on `not-executed` and leaves it pending for reconciliation on `unknown`.
+`executed`, releases it on `not-executed` and leaves it pending for reconciliation on `unknown`; it ends
+the attempt holding the idempotency key the same way.
+
+`IDEMPOTENCY_IN_PROGRESS`, `IDEMPOTENCY_UNRESOLVED` and `ALREADY_EXECUTED` are answered with 409, and
+`IDEMPOTENCY_CONFLICT` with 422; an in-progress answer carries `Retry-After`. Instead of the 409 for
+`ALREADY_EXECUTED`, a relying party MAY answer with the stored response of the first attempt, marked
+with the response header `Plenipo-Replay: true`.
 
 ## 8. MCP binding
 
 An MCP client passes the chain and the invocation in the request `_meta` under `plenipo/authorization`
 as `{ "chain": …, "invocation": … }`. A tool reports its outcome in the result `_meta` under
-`plenipo/outcome`, with the same values as the HTTP header.
+`plenipo/outcome`, with the same values as the HTTP header. A stored result returned for
+`ALREADY_EXECUTED` carries `plenipo/replay: true` in its `_meta`.
 
 ## 9. Extensions
 
@@ -188,7 +240,7 @@ accepts them only when configured to, and their formats may change in a minor re
 
 ## 10. Test vectors
 
-[`test-vectors/plenipo-0.1.json`](../test-vectors/plenipo-0.1.json) holds chains, invocations and the
+[`test-vectors/plenipo-0.2.json`](../test-vectors/plenipo-0.2.json) holds chains, invocations and the
 decisions a conforming verifier reaches, with the trusted PID provider key and the verifier clock for
 each. `npm run vectors` regenerates them; the committed file is the reference.
 
@@ -197,3 +249,9 @@ each. `npm run vectors` regenerates them; the committed file is the reference.
 The mandate member `v` names the format. A change that a verifier of the previous version would
 misread changes `v`; additions that a verifier must understand to stay safe are new extensions, refused
 by verifiers that do not implement them.
+
+Changes from profile 0.1: invocations with members a verifier does not know are refused; the invocation
+member `idem` and the idempotency rules (section 5.1, step 9 of section 6) are new, with four deny codes;
+section 6 describes the maximum age of status lists. Mandates, roots and delegations are unchanged
+(`v` stays `0.1`). A verifier of profile 0.1 ignores `idem`, which is why agents send it only to relying
+parties that keep idempotency keys.

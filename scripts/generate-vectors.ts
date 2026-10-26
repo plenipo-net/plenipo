@@ -110,17 +110,38 @@ async function main() {
     expect: { decision: 'DENY', code: 'EXPIRED', at: 0 },
   });
 
+  // Invocation members (0.5): a verifier must refuse members it does not know, a key without arguments, and a
+  // key it cannot keep, since a retry would otherwise run again.
+  const signed = async (payload: Record<string, unknown>) =>
+    new SignJWT(payload).setProtectedHeader({ alg: 'ES256', typ: 'plenipo-invocation+jwt' }).sign(agent.privateKey);
+  const base = await createInvocation(agent.privateKey, { chain: single, mandateId: bills.id, aud: AUD, ...pay('acquaviva.example', 1000), args: { payee: 'acquaviva.example' } });
+  const claims = decodeJwt(base) as Record<string, unknown>;
+  const hand = (id: string, description: string, invocation: string, expect: Vector['expect']) =>
+    vectors.push({ id, description, chain: single, invocation, verifier: { audience: AUD, now: (claims.iat as number) + 1 }, expect });
+  hand('deny-unknown-member', 'An invocation with a member the profile does not define.', await signed({ ...claims, nonce: 'vector-unknown-member', priority: 'high' }), {
+    decision: 'DENY',
+    code: 'MALFORMED',
+  });
+  hand('deny-idem-without-args', 'An idempotency key without an argument hash.', await signed({ ...claims, args_hash: undefined, nonce: 'vector-idem-no-args', idem: '0123456789abcdef0123456789abcdef' }), {
+    decision: 'DENY',
+    code: 'MALFORMED',
+  });
+  hand('deny-idem-without-store', 'An idempotency key sent to a verifier that keeps no idempotency keys.', await signed({ ...claims, nonce: 'vector-idem-no-store', idem: '0123456789abcdef0123456789abcdef' }), {
+    decision: 'DENY',
+    code: 'CONFIGURATION',
+  });
+
   const out = {
-    profile: 'plenipo-0.1',
+    profile: 'plenipo-0.2',
     generated: new Date().toISOString().slice(0, 10),
     notes:
-      'Verify each vector with the trusted issuer below, a fresh nonce store, a fresh spending ledger and no revocation, at verifier.now. ' +
+      'Verify each vector with the trusted issuer below, a fresh nonce store, a fresh spending ledger, no idempotency store and no revocation, at verifier.now. ' +
       'Each listed PID provider issues PIDs without a status list entry. Where expect.code is absent only the decision is normative.',
     trustedIssuers: [provider.trusted],
     vectors,
   };
   mkdirSync(new URL('../test-vectors/', import.meta.url), { recursive: true });
-  writeFileSync(new URL('../test-vectors/plenipo-0.1.json', import.meta.url), JSON.stringify(out, null, 2) + '\n');
+  writeFileSync(new URL('../test-vectors/plenipo-0.2.json', import.meta.url), JSON.stringify(out, null, 2) + '\n');
   console.log(`wrote ${vectors.length} vectors`);
 }
 

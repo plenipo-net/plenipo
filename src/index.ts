@@ -1,6 +1,20 @@
 export * from './types.js';
 export { createMandate, delegateMandate, encodeMandateTransactionData, nowSeconds, type MandateInput } from './mandate.js';
 export { createInvocation, argsHash, type InvocationInput } from './invocation.js';
+export {
+  InMemoryIdempotencyStore,
+  idempotencyScope,
+  requestFingerprint,
+  newIdempotencyKey,
+  IDEMPOTENCY_KEY_RE,
+  DEFAULT_MAX_REPLAY_BYTES,
+  type IdempotencyStore,
+  type IdempotencyStoreOptions,
+  type IdempotencyRecord,
+  type IdempotencyClaim,
+  type IdempotencyState,
+  type AttemptOutcome,
+} from './idempotency.js';
 export { verifyAuthorization, peekInvocation, type VerifyOptions } from './verify.js';
 export { verifyRoot, RootError, type RootResult } from './root.js';
 export { generateAgentKey, type AgentKey } from './keys.js';
@@ -29,6 +43,7 @@ export {
   defaultStatusFetcher,
   StatusListCache,
   StatusListPublisher,
+  DEFAULT_STATUS_TTL_SECONDS,
   STATUS_INVALID,
   STATUS_SUSPENDED,
   STATUS_VALID,
@@ -91,6 +106,7 @@ export {
   hasDuplicateJsonKeys,
   outcomeFromHeader,
   OUTCOME_HEADER,
+  REPLAY_HEADER,
   DEFAULT_MAX_BODY_BYTES,
   type SettlementOutcome,
   type Gateway,

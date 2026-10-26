@@ -1,7 +1,58 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 (26 October 2026)
 
+Idempotent retries and a tighter revocation bound. Both came from questions after the public launch:
+what happens when an agent's host restarts in the middle of a payment, and how long a revoked mandate
+can still be accepted.
+
+Breaking
+- Invocations with a member the profile does not define are refused with `MALFORMED`; until 0.4 they
+  were ignored, which let a verifier silently drop a constraint it did not know. The profile is now
+  `plenipo-0.2` (docs/spec.md); mandates, roots and delegations are unchanged.
+- `ManagedStatusList` and `StatusListPublisher` publish `ttl` 60 by default (was 300), and the status
+  service's `Cache-Control` follows. Set `ttlSeconds` to keep the old value.
+- Postgres schema version 4 (a new `idempotency` table). `migratePostgres` upgrades from versions 1 to 3;
+  `src/stores/schema.sql` is regenerated.
+- Four new `DenyCode` values: `IDEMPOTENCY_CONFLICT`, `IDEMPOTENCY_IN_PROGRESS`,
+  `IDEMPOTENCY_UNRESOLVED`, `ALREADY_EXECUTED`. Code that switches over every code needs them.
+
+Added
+- Idempotency keys. `createInvocation({ …, idempotencyKey })` signs an `idem` member (requires `args`);
+  every attempt of one intention carries the same key with its own nonce. With `idempotency` in the
+  verify options, at most one attempt per key reaches the action: a key used for another request is
+  `IDEMPOTENCY_CONFLICT`, a running attempt `IDEMPOTENCY_IN_PROGRESS`, an attempt of unknown outcome
+  `IDEMPOTENCY_UNRESOLVED` until reconciled, an executed one `ALREADY_EXECUTED` with its stored result.
+  Keys are scoped by audience and chain hash. A verifier without a store refuses invocations that carry
+  a key (`CONFIGURATION`). The decision of an allowed attempt carries `idempotency`, which the caller ends
+  with the outcome, as it settles the reservation.
+- `InMemoryIdempotencyStore`, `PostgresIdempotencyStore`, `RedisIdempotencyStore`, with `claim`, `attach`,
+  `finish`, `resolve`, `get`, `unresolved` (and `sweep` on Postgres). A key held by an attempt of unknown
+  outcome follows the reconciliation of its reservation on Postgres and Redis ledgers: committed means
+  executed, released means free again.
+- `guardTool` and the HTTP gateway end attempts with the same rule as reservations and keep results
+  for replays (`maxReplayBytes`, default 64 KiB). A retry of an executed call gets the stored tool result
+  with `_meta['plenipo/replay']` (`REPLAY_META_KEY`), or the stored HTTP response with
+  `Plenipo-Replay: true` (`REPLAY_HEADER`); the tool or API does not run again. `idempotency_in_progress`
+  carries `Retry-After`. `gateway.authorize(...).settle(input, response)` keeps a response in
+  authorize mode.
+- `maxStatusAgeSeconds` in the verify options, and per route in the gateway: a cached status list older
+  than that is fetched again, and the default fetcher sends `Cache-Control: max-age=<n>`. `0` fetches on
+  every call. `StatusListCache.get` and `StatusFetcher` take the bound as an optional argument;
+  `DEFAULT_STATUS_TTL_SECONDS` is exported.
+- Test vectors (`test-vectors/plenipo-0.2.json`, renamed from `plenipo-0.1.json`): unknown invocation
+  member, idempotency key without `args_hash`, idempotency key sent to a verifier without a store.
+- Exports: `chainHash` from the main entry point, `idempotencyScope`, `requestFingerprint`,
+  `newIdempotencyKey`, `IDEMPOTENCY_KEY_RE`, `DEFAULT_MAX_REPLAY_BYTES`.
+
+Sandbox
+- The bank keeps idempotency keys for `transfer` (MCP and REST) and marks the tool `idempotent: true` in
+  its binding; `GET /api/idempotency` lists payments with an unknown outcome and
+  `POST /admin/idempotency/<key>/resolve` settles one.
+- The MCP bridge writes each payment's idempotency key to its state file before sending it, and reuses
+  it when the same call is repeated after an unknown outcome, also after a restart of the host.
+- Scenarios `idempotent-retry` and `retry-after-crash` (the second is not run on request in a public
+  sandbox, since it arms a bank-wide failure).
 - First run with a real wallet: walt.id Wallet API 2 approved a `plenipo_mandate` over OpenID4VP and
   the sandbox bank enforced it (`sandbox/level2/README.md`). The same run passed with a TS12 e-mandate
   bound to the PID (`WALTID_EMANDATE=1`).

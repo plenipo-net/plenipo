@@ -16,6 +16,20 @@ import type { MandateRequestSession } from '../openid4vp.js';
 import type { LedgerEntry, NonceStore, SpendingLedger } from '../registry.js';
 import type { Amount } from '../types.js';
 import {
+  idempotencyDuration,
+  isAttemptId,
+  validateFingerprint,
+  validateIdempotencyKey,
+  validateOutcome,
+  validateResult,
+  type AttemptOutcome,
+  type IdempotencyClaim,
+  type IdempotencyRecord,
+  type IdempotencyState,
+  type IdempotencyStore,
+  type IdempotencyStoreOptions,
+} from '../idempotency.js';
+import {
   deserializeSession,
   durationSeconds,
   isReservationId,
@@ -497,5 +511,194 @@ export class RedisMandateSessionStore implements MandateSessionStore {
 
   async delete(id: string): Promise<void> {
     await DEL.run(this.redis, [this.k(id)], []);
+  }
+}
+
+// Idempotency records: one hash per key, `{<prefix>:idem}:k:<sha256(key)>`, with fields key, fp, state,
+// attempt, res, result, lease (ms). Executed and free records carry a TTL; in_progress and unknown records
+// carry none and sit in the `open` sorted set (score: lease end for in_progress, 0 for unknown), which is
+// what `unresolved` reads. `free` keeps a released key until it expires, so a late "executed" still lands.
+
+// Reads a live record into a flat reply: {state, key, fp, attempt, res, hasResult, result}, or nil.
+const IDEM_READ = `
+local function read(rec)
+  local st = redis.call('HGET', rec, 'state')
+  if not st or st == 'free' then return nil end
+  if st == 'in_progress' and tonumber(redis.call('HGET', rec, 'lease') or '0') <= now then st = 'unknown' end
+  local v = redis.call('HMGET', rec, 'key', 'fp', 'attempt', 'res', 'result')
+  local hasResult = '0'
+  if v[5] then hasResult = '1' end
+  return {st, v[1] or '', v[2] or '', v[3] or '', v[4] or '', hasResult, v[5] or ''}
+end
+`;
+
+// KEYS: record, open. ARGV: key, fingerprint, attempt, lease ms, member.
+const IDEM_CLAIM = new Script(`${NOW}${IDEM_READ}
+local held = read(KEYS[1])
+if held then return {0, held} end
+redis.call('DEL', KEYS[1])
+local lease = now + tonumber(ARGV[4])
+redis.call('HSET', KEYS[1], 'key', ARGV[1], 'fp', ARGV[2], 'state', 'in_progress', 'attempt', ARGV[3], 'lease', lease)
+redis.call('ZADD', KEYS[2], lease, ARGV[5])
+return {1}
+`);
+
+// KEYS: record. ARGV: attempt, reservation.
+const IDEM_ATTACH = new Script(`
+local st = redis.call('HGET', KEYS[1], 'state')
+if (st == 'in_progress' or st == 'unknown') and redis.call('HGET', KEYS[1], 'attempt') == ARGV[1] then
+  redis.call('HSET', KEYS[1], 'res', ARGV[2])
+  return 1
+end
+return 0
+`);
+
+// KEYS: record, open. ARGV: attempt, outcome, retention ms, member, hasResult, result.
+const IDEM_FINISH = new Script(`
+local st = redis.call('HGET', KEYS[1], 'state')
+if not st or st == 'executed' or redis.call('HGET', KEYS[1], 'attempt') ~= ARGV[1] then return 0 end
+local outcome = ARGV[2]
+if outcome == 'executed' then
+  -- Also from free: proof that the action ran wins over an earlier "did not run".
+  redis.call('HSET', KEYS[1], 'state', 'executed')
+  if ARGV[5] == '1' then redis.call('HSET', KEYS[1], 'result', ARGV[6]) end
+  redis.call('HDEL', KEYS[1], 'lease')
+  redis.call('PEXPIRE', KEYS[1], tonumber(ARGV[3]))
+  redis.call('ZREM', KEYS[2], ARGV[4])
+  return 1
+end
+if st == 'free' then return 0 end
+if outcome == 'not_executed' then
+  redis.call('HSET', KEYS[1], 'state', 'free')
+  redis.call('HDEL', KEYS[1], 'result', 'lease')
+  redis.call('PEXPIRE', KEYS[1], tonumber(ARGV[3]))
+  redis.call('ZREM', KEYS[2], ARGV[4])
+  return 1
+end
+if st == 'in_progress' then
+  redis.call('HSET', KEYS[1], 'state', 'unknown')
+  redis.call('ZADD', KEYS[2], 0, ARGV[4])
+end
+return 1
+`);
+
+// KEYS: record, open. ARGV: outcome (executed | not_executed), retention ms, member.
+const IDEM_RESOLVE = new Script(`
+local st = redis.call('HGET', KEYS[1], 'state')
+if st ~= 'in_progress' and st ~= 'unknown' then return 0 end
+if ARGV[1] == 'executed' then redis.call('HSET', KEYS[1], 'state', 'executed') else redis.call('HSET', KEYS[1], 'state', 'free') end
+redis.call('HDEL', KEYS[1], 'lease')
+redis.call('PEXPIRE', KEYS[1], tonumber(ARGV[2]))
+redis.call('ZREM', KEYS[2], ARGV[3])
+return 1
+`);
+
+// KEYS: record. Reads one live record.
+const IDEM_GET = new Script(`${NOW}${IDEM_READ}
+local r = read(KEYS[1])
+if r then return r end
+return false
+`);
+
+// KEYS: open. ARGV: limit. Members whose attempt is unknown or past its lease.
+const IDEM_OPEN = new Script(`${NOW}
+return redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', now, 'LIMIT', 0, tonumber(ARGV[1]))
+`);
+
+/** Idempotency keys in Redis: every operation is one Lua script, so a claim and its check cannot interleave. */
+export class RedisIdempotencyStore implements IdempotencyStore {
+  private readonly tag: string;
+  readonly retentionSeconds: number;
+  readonly leaseSeconds: number;
+
+  constructor(
+    private readonly redis: RedisClient,
+    opts: IdempotencyStoreOptions & { /** Key prefix. Default `plenipo`. Keys are `{<prefix>:idem}:…`, one hash slot. */ prefix?: string } = {},
+  ) {
+    this.tag = `{${checkPrefix(opts.prefix)}:idem}`;
+    this.retentionSeconds = idempotencyDuration('retentionSeconds', opts.retentionSeconds, 24 * 3600);
+    this.leaseSeconds = idempotencyDuration('leaseSeconds', opts.leaseSeconds, 300);
+  }
+
+  /** Keys are hashed into names, so a caller-chosen key cannot inject a hash tag or grow keys. */
+  private member(key: string): string {
+    validateIdempotencyKey(key);
+    return sha256(key);
+  }
+
+  private rec(member: string): string {
+    return `${this.tag}:k:${member}`;
+  }
+
+  private get open(): string {
+    return `${this.tag}:open`;
+  }
+
+  private parse(reply: unknown): IdempotencyRecord | undefined {
+    if (!Array.isArray(reply)) return undefined;
+    const [state, key, fingerprint, attempt, res, hasResult, result] = reply.map((x) => (x === null || x === undefined ? '' : String(x)));
+    if (state !== 'in_progress' && state !== 'unknown' && state !== 'executed') throw new TypeError('invalid idempotency state from Redis');
+    return {
+      key,
+      fingerprint,
+      state: state as IdempotencyState,
+      attempt,
+      ...(res ? { reservation: res } : {}),
+      ...(hasResult === '1' ? { result } : {}),
+    };
+  }
+
+  private get retentionMs(): number {
+    return Math.max(1, Math.round(this.retentionSeconds * 1000));
+  }
+
+  async claim(key: string, fingerprint: string): Promise<IdempotencyClaim> {
+    validateFingerprint(fingerprint);
+    const m = this.member(key);
+    const attempt = randomUUID();
+    const r = await IDEM_CLAIM.run(this.redis, [this.rec(m), this.open], [key, fingerprint, attempt, String(Math.max(1, Math.round(this.leaseSeconds * 1000))), m]);
+    if (!Array.isArray(r)) throw new TypeError('unexpected reply from Redis');
+    if (Number(r[0]) === 1) return { claimed: true, attempt };
+    const record = this.parse(r[1]);
+    if (!record) throw new TypeError('unexpected reply from Redis');
+    return { claimed: false, record };
+  }
+
+  async attach(key: string, attempt: string, reservation: string): Promise<void> {
+    const m = this.member(key);
+    if (!isAttemptId(attempt) || typeof reservation !== 'string' || reservation.length === 0 || reservation.length > 256) return;
+    await IDEM_ATTACH.run(this.redis, [this.rec(m)], [attempt, reservation]);
+  }
+
+  async finish(key: string, attempt: string, outcome: AttemptOutcome, result?: string): Promise<void> {
+    const m = this.member(key);
+    validateOutcome(outcome);
+    validateResult(result);
+    if (!isAttemptId(attempt)) return;
+    await IDEM_FINISH.run(this.redis, [this.rec(m), this.open], [attempt, outcome, String(this.retentionMs), m, result === undefined ? '0' : '1', result ?? '']);
+  }
+
+  async resolve(key: string, outcome: 'executed' | 'not_executed'): Promise<boolean> {
+    const m = this.member(key);
+    if (outcome !== 'executed' && outcome !== 'not_executed') throw new RangeError('outcome must be executed or not_executed');
+    const r = await IDEM_RESOLVE.run(this.redis, [this.rec(m), this.open], [outcome, String(this.retentionMs), m]);
+    return Number(r) === 1;
+  }
+
+  async get(key: string): Promise<IdempotencyRecord | undefined> {
+    const m = this.member(key);
+    return this.parse(await IDEM_GET.run(this.redis, [this.rec(m)], []));
+  }
+
+  async unresolved(opts: { limit?: number } = {}): Promise<IdempotencyRecord[]> {
+    const limit = positiveInt('limit', opts.limit, 100, 10_000);
+    const members = await IDEM_OPEN.run(this.redis, [this.open], [String(limit)]);
+    if (!Array.isArray(members)) return [];
+    const out: IdempotencyRecord[] = [];
+    for (const m of members) {
+      const r = this.parse(await IDEM_GET.run(this.redis, [this.rec(String(m))], []));
+      if (r && r.state === 'unknown') out.push(r);
+    }
+    return out;
   }
 }

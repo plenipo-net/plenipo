@@ -1,0 +1,338 @@
+{
+  "profile": "plenipo-0.2",
+  "generated": "2026-10-26",
+  "notes": "Verify each vector with the trusted issuer below, a fresh nonce store, a fresh spending ledger, no idempotency store and no revocation, at verifier.now. Each listed PID provider issues PIDs without a status list entry. Where expect.code is absent only the decision is normative.",
+  "trustedIssuers": [
+    {
+      "iss": "https://pid-provider.test",
+      "jwk": {
+        "key_ops": [
+          "verify"
+        ],
+        "ext": true,
+        "kty": "EC",
+        "x": "NDiBt8YSTneGPL9QoakDxiSKQcPdZWuvFNBKZpMK-Mw",
+        "y": "wAdGmiBDaRDs-1YGQhSNhZlwZMV_6z-aC9KGm9vRcgI",
+        "crv": "P-256"
+      },
+      "withoutStatusList": true
+    }
+  ],
+  "vectors": [
+    {
+      "id": "allow-payment",
+      "description": "A payment to a listed payee within the per-operation limit.",
+      "chain": {
+        "root": {
+          "transaction_data": "eyJjcmVkZW50aWFsX2lkcyI6WyJwaWQiXSwibWFuZGF0ZSI6eyJhY3Rpb25zIjpbInBheW1lbnRzLnRyYW5zZmVyIiwiYWNjb3VudHMucmVhZCJdLCJhZ2VudCI6eyJqd2siOnsiY3J2IjoiUC0yNTYiLCJrdHkiOiJFQyIsIngiOiJ4bDM4Q2lDOXN4dTZmZkl6WHVqS0lQMVNNY3JBby1lR3BIZ2h0eGdKUTJRIiwieSI6IjFFZmctRVA3UGFNVDJPTGI5MktFN0tvSFhrak1TREdOcDY4b2dnRy1SUU0ifX0sImNvdW50ZXJwYXJ0aWVzIjpbImFjcXVhdml2YS5leGFtcGxlIiwibHVtZW4tZW5lcmdpYS5leGFtcGxlIl0sImRlbGVnYXRpb24iOnsibWF4X2RlcHRoIjoxfSwiZXhwIjoxNzk1NjA1NDYyLCJpZCI6Ijg2ZTQxY2Y1LWQ0NjgtNDVkYi1hNGEzLTM1N2ZjODk5YzNmNyIsImxpbWl0cyI6eyJjdXJyZW5jeSI6IkVVUiIsInBlcl9vcGVyYXRpb24iOjE1MDAwLCJ0b3RhbCI6MzAwMDB9LCJuYmYiOjE3OTMwMTM0NjIsInB1cnBvc2UiOiJQYXkgdGhlIGhvdXNlaG9sZCBiaWxscyIsInYiOiIwLjEifSwidHlwZSI6InBsZW5pcG9fbWFuZGF0ZSJ9",
+          "presentation": "eyJ0eXAiOiJkYytzZC1qd3QiLCJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJodHRwczovL3BpZC1wcm92aWRlci50ZXN0IiwiaWF0IjoxNzkzMDEzNDYyLCJleHAiOjE4MjQ1NDk0NjIsInZjdCI6InVybjpldWRpOnBpZDoxIiwiY25mIjp7Imp3ayI6eyJrZXlfb3BzIjpbInZlcmlmeSJdLCJleHQiOnRydWUsImt0eSI6IkVDIiwieCI6IjJYd19VS0xNTm5NeVlsTE5Ha0g5ODJTWlZqQ08xYzF0NF9ZMnk2YkFHZjAiLCJ5IjoiRUtYVjNack84eHR2TUd0blJEa29keHVEMEhMNGxTV0R5QnpDdWc4QlFQTSIsImNydiI6IlAtMjU2In19LCJfc2QiOlsicFhPYmtjWWpLdFZJUFVIaGk1NGE1S0RhSk1lMWFUZmZKMVNZcXlKWnE3VSIsInNBeTl3N3ladmNxSjlRdW9rcUJHcVhjbDNvTDdzWDlIaGg3b2VQcHhidUkiXSwiX3NkX2FsZyI6InNoYS0yNTYifQ.YHaSwgB6c1Q-HvXt_ecf_Twvr9_vr4eGKwXJxINZKENIiyxW4-2n6NSIiot-r3nYG_OzH8I9Vs2F0H9ViVjigw~WyIwNDNkYmVhZTU2ZWVlZDYyIiwiZ2l2ZW5fbmFtZSIsIk1hcmlhIl0~WyJkMzA1NjRiYTE4M2EwYjQ0IiwiZmFtaWx5X25hbWUiLCJSb3NzaSJd~eyJ0eXAiOiJrYitqd3QiLCJhbGciOiJFUzI1NiJ9.eyJpYXQiOjE3OTMwMTM0NjIsImF1ZCI6InBsZW5pcG86bWFuZGF0ZS1yZXF1ZXN0Iiwibm9uY2UiOiJiMDVjNTJiZS01ZTRjLTRjMjktYTdjOC1mNWFiNjRiN2MyN2QiLCJ0cmFuc2FjdGlvbl9kYXRhX2hhc2hlcyI6WyJzTXNZeXJOUFFlalBGNXNjdVNkUV9FZnJxekNLVHVySlFpR1I2ZF9wVlZJIl0sInRyYW5zYWN0aW9uX2RhdGFfaGFzaGVzX2FsZyI6InNoYS0yNTYiLCJzZF9oYXNoIjoiUmE4ajlpMjkyUnoyQ0VTRmEyb2V5S09sRUtsbHdSeTlpTS1mUkRVLVFFVSJ9.eQHySfV84nhwkXz4BvwG-Bl4xNGkn0zAVcmOvoI70Pe8GoixMr4YaRoI95Njf87cdOHQIA4HVsAAG4E_Ku1icg"
+        },
+        "delegations": []
+      },
+      "invocation": "eyJhbGciOiJFUzI1NiIsInR5cCI6InBsZW5pcG8taW52b2NhdGlvbitqd3QifQ.eyJtYW5kYXRlIjoiODZlNDFjZjUtZDQ2OC00NWRiLWE0YTMtMzU3ZmM4OTljM2Y3IiwiYWN0aW9uIjoicGF5bWVudHMudHJhbnNmZXIiLCJjb3VudGVycGFydHkiOiJhY3F1YXZpdmEuZXhhbXBsZSIsImFtb3VudCI6eyJ2YWx1ZSI6ODk1MCwiY3VycmVuY3kiOiJFVVIifSwiYXVkIjoiaHR0cHM6Ly9iYW5rLmV4YW1wbGUiLCJub25jZSI6IjJlM2EwMzliLWY0ZDMtNDU4MS04NzgzLTIxMTNhYTU5MjFjYyIsImlhdCI6MTc5MzAxMzQ2MiwiY2hhaW5faGFzaCI6IlJyNkRIVG5FRFVhRnNVWGdyNzIyT3BzVVFNNEdOWDk0Y1NncWZ5ajYzRWsifQ.NppTw45Vk9ueGspJt_Rd68gmVXlSiD1ldhhOl9QcblZBw3eyt6ofsK7w_wHgpiwRqZhnseMLvVCIcomBdGQt3A",
+      "verifier": {
+        "audience": "https://bank.example",
+        "now": 1793013463
+      },
+      "expect": {
+        "decision": "ALLOW"
+      }
+    },
+    {
+      "id": "deny-counterparty",
+      "description": "A payee the mandate does not list.",
+      "chain": {
+        "root": {
+          "transaction_data": "eyJjcmVkZW50aWFsX2lkcyI6WyJwaWQiXSwibWFuZGF0ZSI6eyJhY3Rpb25zIjpbInBheW1lbnRzLnRyYW5zZmVyIiwiYWNjb3VudHMucmVhZCJdLCJhZ2VudCI6eyJqd2siOnsiY3J2IjoiUC0yNTYiLCJrdHkiOiJFQyIsIngiOiJ4bDM4Q2lDOXN4dTZmZkl6WHVqS0lQMVNNY3JBby1lR3BIZ2h0eGdKUTJRIiwieSI6IjFFZmctRVA3UGFNVDJPTGI5MktFN0tvSFhrak1TREdOcDY4b2dnRy1SUU0ifX0sImNvdW50ZXJwYXJ0aWVzIjpbImFjcXVhdml2YS5leGFtcGxlIiwibHVtZW4tZW5lcmdpYS5leGFtcGxlIl0sImRlbGVnYXRpb24iOnsibWF4X2RlcHRoIjoxfSwiZXhwIjoxNzk1NjA1NDYyLCJpZCI6Ijg2ZTQxY2Y1LWQ0NjgtNDVkYi1hNGEzLTM1N2ZjODk5YzNmNyIsImxpbWl0cyI6eyJjdXJyZW5jeSI6IkVVUiIsInBlcl9vcGVyYXRpb24iOjE1MDAwLCJ0b3RhbCI6MzAwMDB9LCJuYmYiOjE3OTMwMTM0NjIsInB1cnBvc2UiOiJQYXkgdGhlIGhvdXNlaG9sZCBiaWxscyIsInYiOiIwLjEifSwidHlwZSI6InBsZW5pcG9fbWFuZGF0ZSJ9",
+          "presentation": "eyJ0eXAiOiJkYytzZC1qd3QiLCJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJodHRwczovL3BpZC1wcm92aWRlci50ZXN0IiwiaWF0IjoxNzkzMDEzNDYyLCJleHAiOjE4MjQ1NDk0NjIsInZjdCI6InVybjpldWRpOnBpZDoxIiwiY25mIjp7Imp3ayI6eyJrZXlfb3BzIjpbInZlcmlmeSJdLCJleHQiOnRydWUsImt0eSI6IkVDIiwieCI6IjJYd19VS0xNTm5NeVlsTE5Ha0g5ODJTWlZqQ08xYzF0NF9ZMnk2YkFHZjAiLCJ5IjoiRUtYVjNack84eHR2TUd0blJEa29keHVEMEhMNGxTV0R5QnpDdWc4QlFQTSIsImNydiI6IlAtMjU2In19LCJfc2QiOlsicFhPYmtjWWpLdFZJUFVIaGk1NGE1S0RhSk1lMWFUZmZKMVNZcXlKWnE3VSIsInNBeTl3N3ladmNxSjlRdW9rcUJHcVhjbDNvTDdzWDlIaGg3b2VQcHhidUkiXSwiX3NkX2FsZyI6InNoYS0yNTYifQ.YHaSwgB6c1Q-HvXt_ecf_Twvr9_vr4eGKwXJxINZKENIiyxW4-2n6NSIiot-r3nYG_OzH8I9Vs2F0H9ViVjigw~WyIwNDNkYmVhZTU2ZWVlZDYyIiwiZ2l2ZW5fbmFtZSIsIk1hcmlhIl0~WyJkMzA1NjRiYTE4M2EwYjQ0IiwiZmFtaWx5X25hbWUiLCJSb3NzaSJd~eyJ0eXAiOiJrYitqd3QiLCJhbGciOiJFUzI1NiJ9.eyJpYXQiOjE3OTMwMTM0NjIsImF1ZCI6InBsZW5pcG86bWFuZGF0ZS1yZXF1ZXN0Iiwibm9uY2UiOiJiMDVjNTJiZS01ZTRjLTRjMjktYTdjOC1mNWFiNjRiN2MyN2QiLCJ0cmFuc2FjdGlvbl9kYXRhX2hhc2hlcyI6WyJzTXNZeXJOUFFlalBGNXNjdVNkUV9FZnJxekNLVHVySlFpR1I2ZF9wVlZJIl0sInRyYW5zYWN0aW9uX2RhdGFfaGFzaGVzX2FsZyI6InNoYS0yNTYiLCJzZF9oYXNoIjoiUmE4ajlpMjkyUnoyQ0VTRmEyb2V5S09sRUtsbHdSeTlpTS1mUkRVLVFFVSJ9.eQHySfV84nhwkXz4BvwG-Bl4xNGkn0zAVcmOvoI70Pe8GoixMr4YaRoI95Njf87cdOHQIA4HVsAAG4E_Ku1icg"
+        },
+        "delegations": []
+      },
+      "invocation": "eyJhbGciOiJFUzI1NiIsInR5cCI6InBsZW5pcG8taW52b2NhdGlvbitqd3QifQ.eyJtYW5kYXRlIjoiODZlNDFjZjUtZDQ2OC00NWRiLWE0YTMtMzU3ZmM4OTljM2Y3IiwiYWN0aW9uIjoicGF5bWVudHMudHJhbnNmZXIiLCJjb3VudGVycGFydHkiOiJleGFtcGxlLm9yZyIsImFtb3VudCI6eyJ2YWx1ZSI6MTAwMCwiY3VycmVuY3kiOiJFVVIifSwiYXVkIjoiaHR0cHM6Ly9iYW5rLmV4YW1wbGUiLCJub25jZSI6IjlkMmNhZGYyLWQzMmItNGFmNS1iNGQ5LTE4NzEzNmM2MDEyMCIsImlhdCI6MTc5MzAxMzQ2MiwiY2hhaW5faGFzaCI6IlJyNkRIVG5FRFVhRnNVWGdyNzIyT3BzVVFNNEdOWDk0Y1NncWZ5ajYzRWsifQ.xghKBeLaaOXU1Xe_QBkTyaCgCtZ_7oHvMIvBOhhqnTs6Vbp6dO4wc8Wtp5imoR1tiwrNuWrtoFPVVoUQ5vhxdw",
+      "verifier": {
+        "audience": "https://bank.example",
+        "now": 1793013463
+      },
+      "expect": {
+        "decision": "DENY",
+        "code": "COUNTERPARTY_NOT_PERMITTED",
+        "at": 0
+      }
+    },
+    {
+      "id": "deny-per-operation",
+      "description": "An amount above the per-operation limit.",
+      "chain": {
+        "root": {
+          "transaction_data": "eyJjcmVkZW50aWFsX2lkcyI6WyJwaWQiXSwibWFuZGF0ZSI6eyJhY3Rpb25zIjpbInBheW1lbnRzLnRyYW5zZmVyIiwiYWNjb3VudHMucmVhZCJdLCJhZ2VudCI6eyJqd2siOnsiY3J2IjoiUC0yNTYiLCJrdHkiOiJFQyIsIngiOiJ4bDM4Q2lDOXN4dTZmZkl6WHVqS0lQMVNNY3JBby1lR3BIZ2h0eGdKUTJRIiwieSI6IjFFZmctRVA3UGFNVDJPTGI5MktFN0tvSFhrak1TREdOcDY4b2dnRy1SUU0ifX0sImNvdW50ZXJwYXJ0aWVzIjpbImFjcXVhdml2YS5leGFtcGxlIiwibHVtZW4tZW5lcmdpYS5leGFtcGxlIl0sImRlbGVnYXRpb24iOnsibWF4X2RlcHRoIjoxfSwiZXhwIjoxNzk1NjA1NDYyLCJpZCI6Ijg2ZTQxY2Y1LWQ0NjgtNDVkYi1hNGEzLTM1N2ZjODk5YzNmNyIsImxpbWl0cyI6eyJjdXJyZW5jeSI6IkVVUiIsInBlcl9vcGVyYXRpb24iOjE1MDAwLCJ0b3RhbCI6MzAwMDB9LCJuYmYiOjE3OTMwMTM0NjIsInB1cnBvc2UiOiJQYXkgdGhlIGhvdXNlaG9sZCBiaWxscyIsInYiOiIwLjEifSwidHlwZSI6InBsZW5pcG9fbWFuZGF0ZSJ9",
+          "presentation": "eyJ0eXAiOiJkYytzZC1qd3QiLCJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJodHRwczovL3BpZC1wcm92aWRlci50ZXN0IiwiaWF0IjoxNzkzMDEzNDYyLCJleHAiOjE4MjQ1NDk0NjIsInZjdCI6InVybjpldWRpOnBpZDoxIiwiY25mIjp7Imp3ayI6eyJrZXlfb3BzIjpbInZlcmlmeSJdLCJleHQiOnRydWUsImt0eSI6IkVDIiwieCI6IjJYd19VS0xNTm5NeVlsTE5Ha0g5ODJTWlZqQ08xYzF0NF9ZMnk2YkFHZjAiLCJ5IjoiRUtYVjNack84eHR2TUd0blJEa29keHVEMEhMNGxTV0R5QnpDdWc4QlFQTSIsImNydiI6IlAtMjU2In19LCJfc2QiOlsicFhPYmtjWWpLdFZJUFVIaGk1NGE1S0RhSk1lMWFUZmZKMVNZcXlKWnE3VSIsInNBeTl3N3ladmNxSjlRdW9rcUJHcVhjbDNvTDdzWDlIaGg3b2VQcHhidUkiXSwiX3NkX2FsZyI6InNoYS0yNTYifQ.YHaSwgB6c1Q-HvXt_ecf_Twvr9_vr4eGKwXJxINZKENIiyxW4-2n6NSIiot-r3nYG_OzH8I9Vs2F0H9ViVjigw~WyIwNDNkYmVhZTU2ZWVlZDYyIiwiZ2l2ZW5fbmFtZSIsIk1hcmlhIl0~WyJkMzA1NjRiYTE4M2EwYjQ0IiwiZmFtaWx5X25hbWUiLCJSb3NzaSJd~eyJ0eXAiOiJrYitqd3QiLCJhbGciOiJFUzI1NiJ9.eyJpYXQiOjE3OTMwMTM0NjIsImF1ZCI6InBsZW5pcG86bWFuZGF0ZS1yZXF1ZXN0Iiwibm9uY2UiOiJiMDVjNTJiZS01ZTRjLTRjMjktYTdjOC1mNWFiNjRiN2MyN2QiLCJ0cmFuc2FjdGlvbl9kYXRhX2hhc2hlcyI6WyJzTXNZeXJOUFFlalBGNXNjdVNkUV9FZnJxekNLVHVySlFpR1I2ZF9wVlZJIl0sInRyYW5zYWN0aW9uX2RhdGFfaGFzaGVzX2FsZyI6InNoYS0yNTYiLCJzZF9oYXNoIjoiUmE4ajlpMjkyUnoyQ0VTRmEyb2V5S09sRUtsbHdSeTlpTS1mUkRVLVFFVSJ9.eQHySfV84nhwkXz4BvwG-Bl4xNGkn0zAVcmOvoI70Pe8GoixMr4YaRoI95Njf87cdOHQIA4HVsAAG4E_Ku1icg"
+        },
+        "delegations": []
+      },
+      "invocation": "eyJhbGciOiJFUzI1NiIsInR5cCI6InBsZW5pcG8taW52b2NhdGlvbitqd3QifQ.eyJtYW5kYXRlIjoiODZlNDFjZjUtZDQ2OC00NWRiLWE0YTMtMzU3ZmM4OTljM2Y3IiwiYWN0aW9uIjoicGF5bWVudHMudHJhbnNmZXIiLCJjb3VudGVycGFydHkiOiJsdW1lbi1lbmVyZ2lhLmV4YW1wbGUiLCJhbW91bnQiOnsidmFsdWUiOjE1MDAxLCJjdXJyZW5jeSI6IkVVUiJ9LCJhdWQiOiJodHRwczovL2JhbmsuZXhhbXBsZSIsIm5vbmNlIjoiYjk3OTEyYjMtOTg3Yy00N2ZhLWI4OGUtZDkxMmUxNzMzODdmIiwiaWF0IjoxNzkzMDEzNDYyLCJjaGFpbl9oYXNoIjoiUnI2REhUbkVEVWFGc1VYZ3I3MjJPcHNVUU00R05YOTRjU2dxZnlqNjNFayJ9.hEFaz3uuLwio_eEEKJpm0fMZa5vJ7O0_u7ajs3MThItjhZGuqugeqG4c3DNosF5yDovSzH_w_M_naTeiOWsSrg",
+      "verifier": {
+        "audience": "https://bank.example",
+        "now": 1793013463
+      },
+      "expect": {
+        "decision": "DENY",
+        "code": "LIMIT_PER_OPERATION",
+        "at": 0
+      }
+    },
+    {
+      "id": "deny-currency",
+      "description": "An amount in a currency other than the limits currency.",
+      "chain": {
+        "root": {
+          "transaction_data": "eyJjcmVkZW50aWFsX2lkcyI6WyJwaWQiXSwibWFuZGF0ZSI6eyJhY3Rpb25zIjpbInBheW1lbnRzLnRyYW5zZmVyIiwiYWNjb3VudHMucmVhZCJdLCJhZ2VudCI6eyJqd2siOnsiY3J2IjoiUC0yNTYiLCJrdHkiOiJFQyIsIngiOiJ4bDM4Q2lDOXN4dTZmZkl6WHVqS0lQMVNNY3JBby1lR3BIZ2h0eGdKUTJRIiwieSI6IjFFZmctRVA3UGFNVDJPTGI5MktFN0tvSFhrak1TREdOcDY4b2dnRy1SUU0ifX0sImNvdW50ZXJwYXJ0aWVzIjpbImFjcXVhdml2YS5leGFtcGxlIiwibHVtZW4tZW5lcmdpYS5leGFtcGxlIl0sImRlbGVnYXRpb24iOnsibWF4X2RlcHRoIjoxfSwiZXhwIjoxNzk1NjA1NDYyLCJpZCI6Ijg2ZTQxY2Y1LWQ0NjgtNDVkYi1hNGEzLTM1N2ZjODk5YzNmNyIsImxpbWl0cyI6eyJjdXJyZW5jeSI6IkVVUiIsInBlcl9vcGVyYXRpb24iOjE1MDAwLCJ0b3RhbCI6MzAwMDB9LCJuYmYiOjE3OTMwMTM0NjIsInB1cnBvc2UiOiJQYXkgdGhlIGhvdXNlaG9sZCBiaWxscyIsInYiOiIwLjEifSwidHlwZSI6InBsZW5pcG9fbWFuZGF0ZSJ9",
+          "presentation": "eyJ0eXAiOiJkYytzZC1qd3QiLCJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJodHRwczovL3BpZC1wcm92aWRlci50ZXN0IiwiaWF0IjoxNzkzMDEzNDYyLCJleHAiOjE4MjQ1NDk0NjIsInZjdCI6InVybjpldWRpOnBpZDoxIiwiY25mIjp7Imp3ayI6eyJrZXlfb3BzIjpbInZlcmlmeSJdLCJleHQiOnRydWUsImt0eSI6IkVDIiwieCI6IjJYd19VS0xNTm5NeVlsTE5Ha0g5ODJTWlZqQ08xYzF0NF9ZMnk2YkFHZjAiLCJ5IjoiRUtYVjNack84eHR2TUd0blJEa29keHVEMEhMNGxTV0R5QnpDdWc4QlFQTSIsImNydiI6IlAtMjU2In19LCJfc2QiOlsicFhPYmtjWWpLdFZJUFVIaGk1NGE1S0RhSk1lMWFUZmZKMVNZcXlKWnE3VSIsInNBeTl3N3ladmNxSjlRdW9rcUJHcVhjbDNvTDdzWDlIaGg3b2VQcHhidUkiXSwiX3NkX2FsZyI6InNoYS0yNTYifQ.YHaSwgB6c1Q-HvXt_ecf_Twvr9_vr4eGKwXJxINZKENIiyxW4-2n6NSIiot-r3nYG_OzH8I9Vs2F0H9ViVjigw~WyIwNDNkYmVhZTU2ZWVlZDYyIiwiZ2l2ZW5fbmFtZSIsIk1hcmlhIl0~WyJkMzA1NjRiYTE4M2EwYjQ0IiwiZmFtaWx5X25hbWUiLCJSb3NzaSJd~eyJ0eXAiOiJrYitqd3QiLCJhbGciOiJFUzI1NiJ9.eyJpYXQiOjE3OTMwMTM0NjIsImF1ZCI6InBsZW5pcG86bWFuZGF0ZS1yZXF1ZXN0Iiwibm9uY2UiOiJiMDVjNTJiZS01ZTRjLTRjMjktYTdjOC1mNWFiNjRiN2MyN2QiLCJ0cmFuc2FjdGlvbl9kYXRhX2hhc2hlcyI6WyJzTXNZeXJOUFFlalBGNXNjdVNkUV9FZnJxekNLVHVySlFpR1I2ZF9wVlZJIl0sInRyYW5zYWN0aW9uX2RhdGFfaGFzaGVzX2FsZyI6InNoYS0yNTYiLCJzZF9oYXNoIjoiUmE4ajlpMjkyUnoyQ0VTRmEyb2V5S09sRUtsbHdSeTlpTS1mUkRVLVFFVSJ9.eQHySfV84nhwkXz4BvwG-Bl4xNGkn0zAVcmOvoI70Pe8GoixMr4YaRoI95Njf87cdOHQIA4HVsAAG4E_Ku1icg"
+        },
+        "delegations": []
+      },
+      "invocation": "eyJhbGciOiJFUzI1NiIsInR5cCI6InBsZW5pcG8taW52b2NhdGlvbitqd3QifQ.eyJtYW5kYXRlIjoiODZlNDFjZjUtZDQ2OC00NWRiLWE0YTMtMzU3ZmM4OTljM2Y3IiwiYWN0aW9uIjoicGF5bWVudHMudHJhbnNmZXIiLCJjb3VudGVycGFydHkiOiJhY3F1YXZpdmEuZXhhbXBsZSIsImFtb3VudCI6eyJ2YWx1ZSI6MTAwMCwiY3VycmVuY3kiOiJVU0QifSwiYXVkIjoiaHR0cHM6Ly9iYW5rLmV4YW1wbGUiLCJub25jZSI6IjU2MjQ1NDdhLTY2MzItNDQxNS05NWQzLTY1MmQxMTkyODE2YSIsImlhdCI6MTc5MzAxMzQ2MiwiY2hhaW5faGFzaCI6IlJyNkRIVG5FRFVhRnNVWGdyNzIyT3BzVVFNNEdOWDk0Y1NncWZ5ajYzRWsifQ.gEGdkBRdT4ySrCUwBmmq_CfMQh2WkOPqIZtKZ-WIPNbe1iMqTVCWtNG9vhI1hNhM3lTIaC5JBihb30cyg7Ro6w",
+      "verifier": {
+        "audience": "https://bank.example",
+        "now": 1793013463
+      },
+      "expect": {
+        "decision": "DENY",
+        "code": "CURRENCY_MISMATCH",
+        "at": 0
+      }
+    },
+    {
+      "id": "deny-action",
+      "description": "An action the mandate does not cover.",
+      "chain": {
+        "root": {
+          "transaction_data": "eyJjcmVkZW50aWFsX2lkcyI6WyJwaWQiXSwibWFuZGF0ZSI6eyJhY3Rpb25zIjpbInBheW1lbnRzLnRyYW5zZmVyIiwiYWNjb3VudHMucmVhZCJdLCJhZ2VudCI6eyJqd2siOnsiY3J2IjoiUC0yNTYiLCJrdHkiOiJFQyIsIngiOiJ4bDM4Q2lDOXN4dTZmZkl6WHVqS0lQMVNNY3JBby1lR3BIZ2h0eGdKUTJRIiwieSI6IjFFZmctRVA3UGFNVDJPTGI5MktFN0tvSFhrak1TREdOcDY4b2dnRy1SUU0ifX0sImNvdW50ZXJwYXJ0aWVzIjpbImFjcXVhdml2YS5leGFtcGxlIiwibHVtZW4tZW5lcmdpYS5leGFtcGxlIl0sImRlbGVnYXRpb24iOnsibWF4X2RlcHRoIjoxfSwiZXhwIjoxNzk1NjA1NDYyLCJpZCI6Ijg2ZTQxY2Y1LWQ0NjgtNDVkYi1hNGEzLTM1N2ZjODk5YzNmNyIsImxpbWl0cyI6eyJjdXJyZW5jeSI6IkVVUiIsInBlcl9vcGVyYXRpb24iOjE1MDAwLCJ0b3RhbCI6MzAwMDB9LCJuYmYiOjE3OTMwMTM0NjIsInB1cnBvc2UiOiJQYXkgdGhlIGhvdXNlaG9sZCBiaWxscyIsInYiOiIwLjEifSwidHlwZSI6InBsZW5pcG9fbWFuZGF0ZSJ9",
+          "presentation": "eyJ0eXAiOiJkYytzZC1qd3QiLCJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJodHRwczovL3BpZC1wcm92aWRlci50ZXN0IiwiaWF0IjoxNzkzMDEzNDYyLCJleHAiOjE4MjQ1NDk0NjIsInZjdCI6InVybjpldWRpOnBpZDoxIiwiY25mIjp7Imp3ayI6eyJrZXlfb3BzIjpbInZlcmlmeSJdLCJleHQiOnRydWUsImt0eSI6IkVDIiwieCI6IjJYd19VS0xNTm5NeVlsTE5Ha0g5ODJTWlZqQ08xYzF0NF9ZMnk2YkFHZjAiLCJ5IjoiRUtYVjNack84eHR2TUd0blJEa29keHVEMEhMNGxTV0R5QnpDdWc4QlFQTSIsImNydiI6IlAtMjU2In19LCJfc2QiOlsicFhPYmtjWWpLdFZJUFVIaGk1NGE1S0RhSk1lMWFUZmZKMVNZcXlKWnE3VSIsInNBeTl3N3ladmNxSjlRdW9rcUJHcVhjbDNvTDdzWDlIaGg3b2VQcHhidUkiXSwiX3NkX2FsZyI6InNoYS0yNTYifQ.YHaSwgB6c1Q-HvXt_ecf_Twvr9_vr4eGKwXJxINZKENIiyxW4-2n6NSIiot-r3nYG_OzH8I9Vs2F0H9ViVjigw~WyIwNDNkYmVhZTU2ZWVlZDYyIiwiZ2l2ZW5fbmFtZSIsIk1hcmlhIl0~WyJkMzA1NjRiYTE4M2EwYjQ0IiwiZmFtaWx5X25hbWUiLCJSb3NzaSJd~eyJ0eXAiOiJrYitqd3QiLCJhbGciOiJFUzI1NiJ9.eyJpYXQiOjE3OTMwMTM0NjIsImF1ZCI6InBsZW5pcG86bWFuZGF0ZS1yZXF1ZXN0Iiwibm9uY2UiOiJiMDVjNTJiZS01ZTRjLTRjMjktYTdjOC1mNWFiNjRiN2MyN2QiLCJ0cmFuc2FjdGlvbl9kYXRhX2hhc2hlcyI6WyJzTXNZeXJOUFFlalBGNXNjdVNkUV9FZnJxekNLVHVySlFpR1I2ZF9wVlZJIl0sInRyYW5zYWN0aW9uX2RhdGFfaGFzaGVzX2FsZyI6InNoYS0yNTYiLCJzZF9oYXNoIjoiUmE4ajlpMjkyUnoyQ0VTRmEyb2V5S09sRUtsbHdSeTlpTS1mUkRVLVFFVSJ9.eQHySfV84nhwkXz4BvwG-Bl4xNGkn0zAVcmOvoI70Pe8GoixMr4YaRoI95Njf87cdOHQIA4HVsAAG4E_Ku1icg"
+        },
+        "delegations": []
+      },
+      "invocation": "eyJhbGciOiJFUzI1NiIsInR5cCI6InBsZW5pcG8taW52b2NhdGlvbitqd3QifQ.eyJtYW5kYXRlIjoiODZlNDFjZjUtZDQ2OC00NWRiLWE0YTMtMzU3ZmM4OTljM2Y3IiwiYWN0aW9uIjoiY2FyZHMuYmxvY2siLCJjb3VudGVycGFydHkiOiJhY3F1YXZpdmEuZXhhbXBsZSIsImF1ZCI6Imh0dHBzOi8vYmFuay5leGFtcGxlIiwibm9uY2UiOiI1ODFiZmUyNC03YzA1LTRlMjQtOWI0YS1hMTdmNzgxMGUwZjYiLCJpYXQiOjE3OTMwMTM0NjIsImNoYWluX2hhc2giOiJScjZESFRuRURVYUZzVVhncjcyMk9wc1VRTTRHTlg5NGNTZ3FmeWo2M0VrIn0.IJGvhirgkD3bIUfc9LNOQ4sWsXTMKuHMfXlvE81Uaum-tWGIt1CiZaLm-4hLNcX-3zjVSprdxYLsOsi_O2nQJw",
+      "verifier": {
+        "audience": "https://bank.example",
+        "now": 1793013463
+      },
+      "expect": {
+        "decision": "DENY",
+        "code": "ACTION_NOT_PERMITTED",
+        "at": 0
+      }
+    },
+    {
+      "id": "deny-audience",
+      "description": "An invocation addressed to another relying party.",
+      "chain": {
+        "root": {
+          "transaction_data": "eyJjcmVkZW50aWFsX2lkcyI6WyJwaWQiXSwibWFuZGF0ZSI6eyJhY3Rpb25zIjpbInBheW1lbnRzLnRyYW5zZmVyIiwiYWNjb3VudHMucmVhZCJdLCJhZ2VudCI6eyJqd2siOnsiY3J2IjoiUC0yNTYiLCJrdHkiOiJFQyIsIngiOiJ4bDM4Q2lDOXN4dTZmZkl6WHVqS0lQMVNNY3JBby1lR3BIZ2h0eGdKUTJRIiwieSI6IjFFZmctRVA3UGFNVDJPTGI5MktFN0tvSFhrak1TREdOcDY4b2dnRy1SUU0ifX0sImNvdW50ZXJwYXJ0aWVzIjpbImFjcXVhdml2YS5leGFtcGxlIiwibHVtZW4tZW5lcmdpYS5leGFtcGxlIl0sImRlbGVnYXRpb24iOnsibWF4X2RlcHRoIjoxfSwiZXhwIjoxNzk1NjA1NDYyLCJpZCI6Ijg2ZTQxY2Y1LWQ0NjgtNDVkYi1hNGEzLTM1N2ZjODk5YzNmNyIsImxpbWl0cyI6eyJjdXJyZW5jeSI6IkVVUiIsInBlcl9vcGVyYXRpb24iOjE1MDAwLCJ0b3RhbCI6MzAwMDB9LCJuYmYiOjE3OTMwMTM0NjIsInB1cnBvc2UiOiJQYXkgdGhlIGhvdXNlaG9sZCBiaWxscyIsInYiOiIwLjEifSwidHlwZSI6InBsZW5pcG9fbWFuZGF0ZSJ9",
+          "presentation": "eyJ0eXAiOiJkYytzZC1qd3QiLCJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJodHRwczovL3BpZC1wcm92aWRlci50ZXN0IiwiaWF0IjoxNzkzMDEzNDYyLCJleHAiOjE4MjQ1NDk0NjIsInZjdCI6InVybjpldWRpOnBpZDoxIiwiY25mIjp7Imp3ayI6eyJrZXlfb3BzIjpbInZlcmlmeSJdLCJleHQiOnRydWUsImt0eSI6IkVDIiwieCI6IjJYd19VS0xNTm5NeVlsTE5Ha0g5ODJTWlZqQ08xYzF0NF9ZMnk2YkFHZjAiLCJ5IjoiRUtYVjNack84eHR2TUd0blJEa29keHVEMEhMNGxTV0R5QnpDdWc4QlFQTSIsImNydiI6IlAtMjU2In19LCJfc2QiOlsicFhPYmtjWWpLdFZJUFVIaGk1NGE1S0RhSk1lMWFUZmZKMVNZcXlKWnE3VSIsInNBeTl3N3ladmNxSjlRdW9rcUJHcVhjbDNvTDdzWDlIaGg3b2VQcHhidUkiXSwiX3NkX2FsZyI6InNoYS0yNTYifQ.YHaSwgB6c1Q-HvXt_ecf_Twvr9_vr4eGKwXJxINZKENIiyxW4-2n6NSIiot-r3nYG_OzH8I9Vs2F0H9ViVjigw~WyIwNDNkYmVhZTU2ZWVlZDYyIiwiZ2l2ZW5fbmFtZSIsIk1hcmlhIl0~WyJkMzA1NjRiYTE4M2EwYjQ0IiwiZmFtaWx5X25hbWUiLCJSb3NzaSJd~eyJ0eXAiOiJrYitqd3QiLCJhbGciOiJFUzI1NiJ9.eyJpYXQiOjE3OTMwMTM0NjIsImF1ZCI6InBsZW5pcG86bWFuZGF0ZS1yZXF1ZXN0Iiwibm9uY2UiOiJiMDVjNTJiZS01ZTRjLTRjMjktYTdjOC1mNWFiNjRiN2MyN2QiLCJ0cmFuc2FjdGlvbl9kYXRhX2hhc2hlcyI6WyJzTXNZeXJOUFFlalBGNXNjdVNkUV9FZnJxekNLVHVySlFpR1I2ZF9wVlZJIl0sInRyYW5zYWN0aW9uX2RhdGFfaGFzaGVzX2FsZyI6InNoYS0yNTYiLCJzZF9oYXNoIjoiUmE4ajlpMjkyUnoyQ0VTRmEyb2V5S09sRUtsbHdSeTlpTS1mUkRVLVFFVSJ9.eQHySfV84nhwkXz4BvwG-Bl4xNGkn0zAVcmOvoI70Pe8GoixMr4YaRoI95Njf87cdOHQIA4HVsAAG4E_Ku1icg"
+        },
+        "delegations": []
+      },
+      "invocation": "eyJhbGciOiJFUzI1NiIsInR5cCI6InBsZW5pcG8taW52b2NhdGlvbitqd3QifQ.eyJtYW5kYXRlIjoiODZlNDFjZjUtZDQ2OC00NWRiLWE0YTMtMzU3ZmM4OTljM2Y3IiwiYWN0aW9uIjoicGF5bWVudHMudHJhbnNmZXIiLCJjb3VudGVycGFydHkiOiJhY3F1YXZpdmEuZXhhbXBsZSIsImFtb3VudCI6eyJ2YWx1ZSI6MTAwMCwiY3VycmVuY3kiOiJFVVIifSwiYXVkIjoiaHR0cHM6Ly9vdGhlci5leGFtcGxlIiwibm9uY2UiOiJlZWNmY2VmMS0yNWI5LTQxOTEtYjAwYi0yYTk5YTVkYWFlZDAiLCJpYXQiOjE3OTMwMTM0NjIsImNoYWluX2hhc2giOiJScjZESFRuRURVYUZzVVhncjcyMk9wc1VRTTRHTlg5NGNTZ3FmeWo2M0VrIn0.UWTraBPURyiHceLTGJO4sij0x6IISm8Ega3fjrQOu0Z3WK3oBSLl_UIma4iit-wNQOalLRdys_aS0UsAKA2v3w",
+      "verifier": {
+        "audience": "https://bank.example",
+        "now": 1793013463
+      },
+      "expect": {
+        "decision": "DENY",
+        "code": "AUDIENCE_MISMATCH"
+      }
+    },
+    {
+      "id": "deny-wrong-signer",
+      "description": "An invocation signed by a key that is not the leaf agent key.",
+      "chain": {
+        "root": {
+          "transaction_data": "eyJjcmVkZW50aWFsX2lkcyI6WyJwaWQiXSwibWFuZGF0ZSI6eyJhY3Rpb25zIjpbInBheW1lbnRzLnRyYW5zZmVyIiwiYWNjb3VudHMucmVhZCJdLCJhZ2VudCI6eyJqd2siOnsiY3J2IjoiUC0yNTYiLCJrdHkiOiJFQyIsIngiOiJ4bDM4Q2lDOXN4dTZmZkl6WHVqS0lQMVNNY3JBby1lR3BIZ2h0eGdKUTJRIiwieSI6IjFFZmctRVA3UGFNVDJPTGI5MktFN0tvSFhrak1TREdOcDY4b2dnRy1SUU0ifX0sImNvdW50ZXJwYXJ0aWVzIjpbImFjcXVhdml2YS5leGFtcGxlIiwibHVtZW4tZW5lcmdpYS5leGFtcGxlIl0sImRlbGVnYXRpb24iOnsibWF4X2RlcHRoIjoxfSwiZXhwIjoxNzk1NjA1NDYyLCJpZCI6Ijg2ZTQxY2Y1LWQ0NjgtNDVkYi1hNGEzLTM1N2ZjODk5YzNmNyIsImxpbWl0cyI6eyJjdXJyZW5jeSI6IkVVUiIsInBlcl9vcGVyYXRpb24iOjE1MDAwLCJ0b3RhbCI6MzAwMDB9LCJuYmYiOjE3OTMwMTM0NjIsInB1cnBvc2UiOiJQYXkgdGhlIGhvdXNlaG9sZCBiaWxscyIsInYiOiIwLjEifSwidHlwZSI6InBsZW5pcG9fbWFuZGF0ZSJ9",
+          "presentation": "eyJ0eXAiOiJkYytzZC1qd3QiLCJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJodHRwczovL3BpZC1wcm92aWRlci50ZXN0IiwiaWF0IjoxNzkzMDEzNDYyLCJleHAiOjE4MjQ1NDk0NjIsInZjdCI6InVybjpldWRpOnBpZDoxIiwiY25mIjp7Imp3ayI6eyJrZXlfb3BzIjpbInZlcmlmeSJdLCJleHQiOnRydWUsImt0eSI6IkVDIiwieCI6IjJYd19VS0xNTm5NeVlsTE5Ha0g5ODJTWlZqQ08xYzF0NF9ZMnk2YkFHZjAiLCJ5IjoiRUtYVjNack84eHR2TUd0blJEa29keHVEMEhMNGxTV0R5QnpDdWc4QlFQTSIsImNydiI6IlAtMjU2In19LCJfc2QiOlsicFhPYmtjWWpLdFZJUFVIaGk1NGE1S0RhSk1lMWFUZmZKMVNZcXlKWnE3VSIsInNBeTl3N3ladmNxSjlRdW9rcUJHcVhjbDNvTDdzWDlIaGg3b2VQcHhidUkiXSwiX3NkX2FsZyI6InNoYS0yNTYifQ.YHaSwgB6c1Q-HvXt_ecf_Twvr9_vr4eGKwXJxINZKENIiyxW4-2n6NSIiot-r3nYG_OzH8I9Vs2F0H9ViVjigw~WyIwNDNkYmVhZTU2ZWVlZDYyIiwiZ2l2ZW5fbmFtZSIsIk1hcmlhIl0~WyJkMzA1NjRiYTE4M2EwYjQ0IiwiZmFtaWx5X25hbWUiLCJSb3NzaSJd~eyJ0eXAiOiJrYitqd3QiLCJhbGciOiJFUzI1NiJ9.eyJpYXQiOjE3OTMwMTM0NjIsImF1ZCI6InBsZW5pcG86bWFuZGF0ZS1yZXF1ZXN0Iiwibm9uY2UiOiJiMDVjNTJiZS01ZTRjLTRjMjktYTdjOC1mNWFiNjRiN2MyN2QiLCJ0cmFuc2FjdGlvbl9kYXRhX2hhc2hlcyI6WyJzTXNZeXJOUFFlalBGNXNjdVNkUV9FZnJxekNLVHVySlFpR1I2ZF9wVlZJIl0sInRyYW5zYWN0aW9uX2RhdGFfaGFzaGVzX2FsZyI6InNoYS0yNTYiLCJzZF9oYXNoIjoiUmE4ajlpMjkyUnoyQ0VTRmEyb2V5S09sRUtsbHdSeTlpTS1mUkRVLVFFVSJ9.eQHySfV84nhwkXz4BvwG-Bl4xNGkn0zAVcmOvoI70Pe8GoixMr4YaRoI95Njf87cdOHQIA4HVsAAG4E_Ku1icg"
+        },
+        "delegations": []
+      },
+      "invocation": "eyJhbGciOiJFUzI1NiIsInR5cCI6InBsZW5pcG8taW52b2NhdGlvbitqd3QifQ.eyJtYW5kYXRlIjoiODZlNDFjZjUtZDQ2OC00NWRiLWE0YTMtMzU3ZmM4OTljM2Y3IiwiYWN0aW9uIjoicGF5bWVudHMudHJhbnNmZXIiLCJjb3VudGVycGFydHkiOiJhY3F1YXZpdmEuZXhhbXBsZSIsImFtb3VudCI6eyJ2YWx1ZSI6MTAwMCwiY3VycmVuY3kiOiJFVVIifSwiYXVkIjoiaHR0cHM6Ly9iYW5rLmV4YW1wbGUiLCJub25jZSI6ImQ5YTc0YzZkLTI4MDMtNDczNi05ZTk2LWY4NWNjODYxYzVlZiIsImlhdCI6MTc5MzAxMzQ2MiwiY2hhaW5faGFzaCI6IlJyNkRIVG5FRFVhRnNVWGdyNzIyT3BzVVFNNEdOWDk0Y1NncWZ5ajYzRWsifQ.FsU2awK3tOjID15n08C_X_LEq3_YikwguIHoSZfW6IzF1sXw0pBjY3SFp3NJQYFcRCOSJ6dI03iiOLiLI4PCbA",
+      "verifier": {
+        "audience": "https://bank.example",
+        "now": 1793013463
+      },
+      "expect": {
+        "decision": "DENY",
+        "code": "INVOCATION_SIGNATURE_INVALID"
+      }
+    },
+    {
+      "id": "allow-read-no-money",
+      "description": "A balance read the relying party declares as moving no money and having no counterparty.",
+      "chain": {
+        "root": {
+          "transaction_data": "eyJjcmVkZW50aWFsX2lkcyI6WyJwaWQiXSwibWFuZGF0ZSI6eyJhY3Rpb25zIjpbInBheW1lbnRzLnRyYW5zZmVyIiwiYWNjb3VudHMucmVhZCJdLCJhZ2VudCI6eyJqd2siOnsiY3J2IjoiUC0yNTYiLCJrdHkiOiJFQyIsIngiOiJ4bDM4Q2lDOXN4dTZmZkl6WHVqS0lQMVNNY3JBby1lR3BIZ2h0eGdKUTJRIiwieSI6IjFFZmctRVA3UGFNVDJPTGI5MktFN0tvSFhrak1TREdOcDY4b2dnRy1SUU0ifX0sImNvdW50ZXJwYXJ0aWVzIjpbImFjcXVhdml2YS5leGFtcGxlIiwibHVtZW4tZW5lcmdpYS5leGFtcGxlIl0sImRlbGVnYXRpb24iOnsibWF4X2RlcHRoIjoxfSwiZXhwIjoxNzk1NjA1NDYyLCJpZCI6Ijg2ZTQxY2Y1LWQ0NjgtNDVkYi1hNGEzLTM1N2ZjODk5YzNmNyIsImxpbWl0cyI6eyJjdXJyZW5jeSI6IkVVUiIsInBlcl9vcGVyYXRpb24iOjE1MDAwLCJ0b3RhbCI6MzAwMDB9LCJuYmYiOjE3OTMwMTM0NjIsInB1cnBvc2UiOiJQYXkgdGhlIGhvdXNlaG9sZCBiaWxscyIsInYiOiIwLjEifSwidHlwZSI6InBsZW5pcG9fbWFuZGF0ZSJ9",
+          "presentation": "eyJ0eXAiOiJkYytzZC1qd3QiLCJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJodHRwczovL3BpZC1wcm92aWRlci50ZXN0IiwiaWF0IjoxNzkzMDEzNDYyLCJleHAiOjE4MjQ1NDk0NjIsInZjdCI6InVybjpldWRpOnBpZDoxIiwiY25mIjp7Imp3ayI6eyJrZXlfb3BzIjpbInZlcmlmeSJdLCJleHQiOnRydWUsImt0eSI6IkVDIiwieCI6IjJYd19VS0xNTm5NeVlsTE5Ha0g5ODJTWlZqQ08xYzF0NF9ZMnk2YkFHZjAiLCJ5IjoiRUtYVjNack84eHR2TUd0blJEa29keHVEMEhMNGxTV0R5QnpDdWc4QlFQTSIsImNydiI6IlAtMjU2In19LCJfc2QiOlsicFhPYmtjWWpLdFZJUFVIaGk1NGE1S0RhSk1lMWFUZmZKMVNZcXlKWnE3VSIsInNBeTl3N3ladmNxSjlRdW9rcUJHcVhjbDNvTDdzWDlIaGg3b2VQcHhidUkiXSwiX3NkX2FsZyI6InNoYS0yNTYifQ.YHaSwgB6c1Q-HvXt_ecf_Twvr9_vr4eGKwXJxINZKENIiyxW4-2n6NSIiot-r3nYG_OzH8I9Vs2F0H9ViVjigw~WyIwNDNkYmVhZTU2ZWVlZDYyIiwiZ2l2ZW5fbmFtZSIsIk1hcmlhIl0~WyJkMzA1NjRiYTE4M2EwYjQ0IiwiZmFtaWx5X25hbWUiLCJSb3NzaSJd~eyJ0eXAiOiJrYitqd3QiLCJhbGciOiJFUzI1NiJ9.eyJpYXQiOjE3OTMwMTM0NjIsImF1ZCI6InBsZW5pcG86bWFuZGF0ZS1yZXF1ZXN0Iiwibm9uY2UiOiJiMDVjNTJiZS01ZTRjLTRjMjktYTdjOC1mNWFiNjRiN2MyN2QiLCJ0cmFuc2FjdGlvbl9kYXRhX2hhc2hlcyI6WyJzTXNZeXJOUFFlalBGNXNjdVNkUV9FZnJxekNLVHVySlFpR1I2ZF9wVlZJIl0sInRyYW5zYWN0aW9uX2RhdGFfaGFzaGVzX2FsZyI6InNoYS0yNTYiLCJzZF9oYXNoIjoiUmE4ajlpMjkyUnoyQ0VTRmEyb2V5S09sRUtsbHdSeTlpTS1mUkRVLVFFVSJ9.eQHySfV84nhwkXz4BvwG-Bl4xNGkn0zAVcmOvoI70Pe8GoixMr4YaRoI95Njf87cdOHQIA4HVsAAG4E_Ku1icg"
+        },
+        "delegations": []
+      },
+      "invocation": "eyJhbGciOiJFUzI1NiIsInR5cCI6InBsZW5pcG8taW52b2NhdGlvbitqd3QifQ.eyJtYW5kYXRlIjoiODZlNDFjZjUtZDQ2OC00NWRiLWE0YTMtMzU3ZmM4OTljM2Y3IiwiYWN0aW9uIjoiYWNjb3VudHMucmVhZCIsImF1ZCI6Imh0dHBzOi8vYmFuay5leGFtcGxlIiwibm9uY2UiOiJmNmQzMTc3MC1jY2IwLTRjMDUtOTQzNy1jZTgzODMzZTA4MTAiLCJpYXQiOjE3OTMwMTM0NjIsImNoYWluX2hhc2giOiJScjZESFRuRURVYUZzVVhncjcyMk9wc1VRTTRHTlg5NGNTZ3FmeWo2M0VrIn0.5iVKm5I6qNvbG-Ed9lwwOBKP1uKxKMWAkLbD4csADQMDeVWGFmLfQEpoVkprTBzfNQykVOXvosLTf5YWSYfirQ",
+      "verifier": {
+        "audience": "https://bank.example",
+        "now": 1793013463,
+        "expected": {
+          "action": "accounts.read",
+          "counterparty": null,
+          "amount": null
+        }
+      },
+      "expect": {
+        "decision": "ALLOW"
+      }
+    },
+    {
+      "id": "allow-delegated-read",
+      "description": "A sub-agent with a read-only delegation reads the balance.",
+      "chain": {
+        "root": {
+          "transaction_data": "eyJjcmVkZW50aWFsX2lkcyI6WyJwaWQiXSwibWFuZGF0ZSI6eyJhY3Rpb25zIjpbInBheW1lbnRzLnRyYW5zZmVyIiwiYWNjb3VudHMucmVhZCJdLCJhZ2VudCI6eyJqd2siOnsiY3J2IjoiUC0yNTYiLCJrdHkiOiJFQyIsIngiOiJ4bDM4Q2lDOXN4dTZmZkl6WHVqS0lQMVNNY3JBby1lR3BIZ2h0eGdKUTJRIiwieSI6IjFFZmctRVA3UGFNVDJPTGI5MktFN0tvSFhrak1TREdOcDY4b2dnRy1SUU0ifX0sImNvdW50ZXJwYXJ0aWVzIjpbImFjcXVhdml2YS5leGFtcGxlIiwibHVtZW4tZW5lcmdpYS5leGFtcGxlIl0sImRlbGVnYXRpb24iOnsibWF4X2RlcHRoIjoxfSwiZXhwIjoxNzk1NjA1NDYyLCJpZCI6Ijg2ZTQxY2Y1LWQ0NjgtNDVkYi1hNGEzLTM1N2ZjODk5YzNmNyIsImxpbWl0cyI6eyJjdXJyZW5jeSI6IkVVUiIsInBlcl9vcGVyYXRpb24iOjE1MDAwLCJ0b3RhbCI6MzAwMDB9LCJuYmYiOjE3OTMwMTM0NjIsInB1cnBvc2UiOiJQYXkgdGhlIGhvdXNlaG9sZCBiaWxscyIsInYiOiIwLjEifSwidHlwZSI6InBsZW5pcG9fbWFuZGF0ZSJ9",
+          "presentation": "eyJ0eXAiOiJkYytzZC1qd3QiLCJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJodHRwczovL3BpZC1wcm92aWRlci50ZXN0IiwiaWF0IjoxNzkzMDEzNDYyLCJleHAiOjE4MjQ1NDk0NjIsInZjdCI6InVybjpldWRpOnBpZDoxIiwiY25mIjp7Imp3ayI6eyJrZXlfb3BzIjpbInZlcmlmeSJdLCJleHQiOnRydWUsImt0eSI6IkVDIiwieCI6IjJYd19VS0xNTm5NeVlsTE5Ha0g5ODJTWlZqQ08xYzF0NF9ZMnk2YkFHZjAiLCJ5IjoiRUtYVjNack84eHR2TUd0blJEa29keHVEMEhMNGxTV0R5QnpDdWc4QlFQTSIsImNydiI6IlAtMjU2In19LCJfc2QiOlsicFhPYmtjWWpLdFZJUFVIaGk1NGE1S0RhSk1lMWFUZmZKMVNZcXlKWnE3VSIsInNBeTl3N3ladmNxSjlRdW9rcUJHcVhjbDNvTDdzWDlIaGg3b2VQcHhidUkiXSwiX3NkX2FsZyI6InNoYS0yNTYifQ.YHaSwgB6c1Q-HvXt_ecf_Twvr9_vr4eGKwXJxINZKENIiyxW4-2n6NSIiot-r3nYG_OzH8I9Vs2F0H9ViVjigw~WyIwNDNkYmVhZTU2ZWVlZDYyIiwiZ2l2ZW5fbmFtZSIsIk1hcmlhIl0~WyJkMzA1NjRiYTE4M2EwYjQ0IiwiZmFtaWx5X25hbWUiLCJSb3NzaSJd~eyJ0eXAiOiJrYitqd3QiLCJhbGciOiJFUzI1NiJ9.eyJpYXQiOjE3OTMwMTM0NjIsImF1ZCI6InBsZW5pcG86bWFuZGF0ZS1yZXF1ZXN0Iiwibm9uY2UiOiJiMDVjNTJiZS01ZTRjLTRjMjktYTdjOC1mNWFiNjRiN2MyN2QiLCJ0cmFuc2FjdGlvbl9kYXRhX2hhc2hlcyI6WyJzTXNZeXJOUFFlalBGNXNjdVNkUV9FZnJxekNLVHVySlFpR1I2ZF9wVlZJIl0sInRyYW5zYWN0aW9uX2RhdGFfaGFzaGVzX2FsZyI6InNoYS0yNTYiLCJzZF9oYXNoIjoiUmE4ajlpMjkyUnoyQ0VTRmEyb2V5S09sRUtsbHdSeTlpTS1mUkRVLVFFVSJ9.eQHySfV84nhwkXz4BvwG-Bl4xNGkn0zAVcmOvoI70Pe8GoixMr4YaRoI95Njf87cdOHQIA4HVsAAG4E_Ku1icg"
+        },
+        "delegations": [
+          "eyJhbGciOiJFUzI1NiIsInR5cCI6InBsZW5pcG8tZGVsZWdhdGlvbitqd3QifQ.eyJtYW5kYXRlIjp7InYiOiIwLjEiLCJpZCI6ImQ3NzI0NWM1LTEwNGMtNDZmNC1hZjg2LWE0MGQyMmFhNmU5MiIsImFnZW50Ijp7Imp3ayI6eyJrdHkiOiJFQyIsImNydiI6IlAtMjU2IiwieCI6InNDTHAtWURTRWpvT0tjV253Y0NRaXh1YXoxSHhpNGZzUjNZci1icEVUdnciLCJ5IjoiVEk5TlB5NVIxRUlvUDBjRHcwWDR1VTZFcy1rT0dwMllJd3VyV0YwRy1TUSJ9fSwiYWN0aW9ucyI6WyJhY2NvdW50cy5yZWFkIl0sImNvdW50ZXJwYXJ0aWVzIjpbImFjcXVhdml2YS5leGFtcGxlIiwibHVtZW4tZW5lcmdpYS5leGFtcGxlIl0sImxpbWl0cyI6eyJjdXJyZW5jeSI6IkVVUiIsInBlcl9vcGVyYXRpb24iOjE1MDAwLCJ0b3RhbCI6MzAwMDB9LCJuYmYiOjE3OTMwMTM0NjIsImV4cCI6MTc5NTYwNTQ2Mn0sInBhcmVudF9pZCI6Ijg2ZTQxY2Y1LWQ0NjgtNDVkYi1hNGEzLTM1N2ZjODk5YzNmNyIsInBhcmVudF9oYXNoIjoib0xTbWE2eHBpeWM2VFk4ck8yWWkyaVVGaUhKSjNpYzR5d2VtbmljSFBKSSIsImlhdCI6MTc5MzAxMzQ2Mn0.i1xoxqu71o3cHZWfB8PrRLLt7P366c1IuxJZZ2cXN48InJRXsoblGA-JuZJ9A2nvaivWo9pXjGPCtTfsxjRcKw"
+        ]
+      },
+      "invocation": "eyJhbGciOiJFUzI1NiIsInR5cCI6InBsZW5pcG8taW52b2NhdGlvbitqd3QifQ.eyJtYW5kYXRlIjoiZDc3MjQ1YzUtMTA0Yy00NmY0LWFmODYtYTQwZDIyYWE2ZTkyIiwiYWN0aW9uIjoiYWNjb3VudHMucmVhZCIsImNvdW50ZXJwYXJ0eSI6ImFjcXVhdml2YS5leGFtcGxlIiwiYW1vdW50Ijp7InZhbHVlIjowLCJjdXJyZW5jeSI6IkVVUiJ9LCJhdWQiOiJodHRwczovL2JhbmsuZXhhbXBsZSIsIm5vbmNlIjoiZWYxNjA3NDAtYTQ0YS00NjllLWI1NzAtYjBkMjM5MzlmZWMzIiwiaWF0IjoxNzkzMDEzNDYyLCJjaGFpbl9oYXNoIjoicEY3a1F4QjZiSWx4NEMwdFZtcENndy1vQjhfTVVIajI1V3FNMHB5TUNrdyJ9.M2-ubuHP1ZEtPE1qDbFvfmNRIwI56hSmvgSAWqOuX1l4QyFAPBTsh0Gbg-0LNaWwO2811Gtr0y1UiwyRkNhvnw",
+      "verifier": {
+        "audience": "https://bank.example",
+        "now": 1793013463
+      },
+      "expect": {
+        "decision": "ALLOW"
+      }
+    },
+    {
+      "id": "deny-delegated-payment",
+      "description": "The read-only sub-agent tries to pay.",
+      "chain": {
+        "root": {
+          "transaction_data": "eyJjcmVkZW50aWFsX2lkcyI6WyJwaWQiXSwibWFuZGF0ZSI6eyJhY3Rpb25zIjpbInBheW1lbnRzLnRyYW5zZmVyIiwiYWNjb3VudHMucmVhZCJdLCJhZ2VudCI6eyJqd2siOnsiY3J2IjoiUC0yNTYiLCJrdHkiOiJFQyIsIngiOiJ4bDM4Q2lDOXN4dTZmZkl6WHVqS0lQMVNNY3JBby1lR3BIZ2h0eGdKUTJRIiwieSI6IjFFZmctRVA3UGFNVDJPTGI5MktFN0tvSFhrak1TREdOcDY4b2dnRy1SUU0ifX0sImNvdW50ZXJwYXJ0aWVzIjpbImFjcXVhdml2YS5leGFtcGxlIiwibHVtZW4tZW5lcmdpYS5leGFtcGxlIl0sImRlbGVnYXRpb24iOnsibWF4X2RlcHRoIjoxfSwiZXhwIjoxNzk1NjA1NDYyLCJpZCI6Ijg2ZTQxY2Y1LWQ0NjgtNDVkYi1hNGEzLTM1N2ZjODk5YzNmNyIsImxpbWl0cyI6eyJjdXJyZW5jeSI6IkVVUiIsInBlcl9vcGVyYXRpb24iOjE1MDAwLCJ0b3RhbCI6MzAwMDB9LCJuYmYiOjE3OTMwMTM0NjIsInB1cnBvc2UiOiJQYXkgdGhlIGhvdXNlaG9sZCBiaWxscyIsInYiOiIwLjEifSwidHlwZSI6InBsZW5pcG9fbWFuZGF0ZSJ9",
+          "presentation": "eyJ0eXAiOiJkYytzZC1qd3QiLCJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJodHRwczovL3BpZC1wcm92aWRlci50ZXN0IiwiaWF0IjoxNzkzMDEzNDYyLCJleHAiOjE4MjQ1NDk0NjIsInZjdCI6InVybjpldWRpOnBpZDoxIiwiY25mIjp7Imp3ayI6eyJrZXlfb3BzIjpbInZlcmlmeSJdLCJleHQiOnRydWUsImt0eSI6IkVDIiwieCI6IjJYd19VS0xNTm5NeVlsTE5Ha0g5ODJTWlZqQ08xYzF0NF9ZMnk2YkFHZjAiLCJ5IjoiRUtYVjNack84eHR2TUd0blJEa29keHVEMEhMNGxTV0R5QnpDdWc4QlFQTSIsImNydiI6IlAtMjU2In19LCJfc2QiOlsicFhPYmtjWWpLdFZJUFVIaGk1NGE1S0RhSk1lMWFUZmZKMVNZcXlKWnE3VSIsInNBeTl3N3ladmNxSjlRdW9rcUJHcVhjbDNvTDdzWDlIaGg3b2VQcHhidUkiXSwiX3NkX2FsZyI6InNoYS0yNTYifQ.YHaSwgB6c1Q-HvXt_ecf_Twvr9_vr4eGKwXJxINZKENIiyxW4-2n6NSIiot-r3nYG_OzH8I9Vs2F0H9ViVjigw~WyIwNDNkYmVhZTU2ZWVlZDYyIiwiZ2l2ZW5fbmFtZSIsIk1hcmlhIl0~WyJkMzA1NjRiYTE4M2EwYjQ0IiwiZmFtaWx5X25hbWUiLCJSb3NzaSJd~eyJ0eXAiOiJrYitqd3QiLCJhbGciOiJFUzI1NiJ9.eyJpYXQiOjE3OTMwMTM0NjIsImF1ZCI6InBsZW5pcG86bWFuZGF0ZS1yZXF1ZXN0Iiwibm9uY2UiOiJiMDVjNTJiZS01ZTRjLTRjMjktYTdjOC1mNWFiNjRiN2MyN2QiLCJ0cmFuc2FjdGlvbl9kYXRhX2hhc2hlcyI6WyJzTXNZeXJOUFFlalBGNXNjdVNkUV9FZnJxekNLVHVySlFpR1I2ZF9wVlZJIl0sInRyYW5zYWN0aW9uX2RhdGFfaGFzaGVzX2FsZyI6InNoYS0yNTYiLCJzZF9oYXNoIjoiUmE4ajlpMjkyUnoyQ0VTRmEyb2V5S09sRUtsbHdSeTlpTS1mUkRVLVFFVSJ9.eQHySfV84nhwkXz4BvwG-Bl4xNGkn0zAVcmOvoI70Pe8GoixMr4YaRoI95Njf87cdOHQIA4HVsAAG4E_Ku1icg"
+        },
+        "delegations": [
+          "eyJhbGciOiJFUzI1NiIsInR5cCI6InBsZW5pcG8tZGVsZWdhdGlvbitqd3QifQ.eyJtYW5kYXRlIjp7InYiOiIwLjEiLCJpZCI6ImQ3NzI0NWM1LTEwNGMtNDZmNC1hZjg2LWE0MGQyMmFhNmU5MiIsImFnZW50Ijp7Imp3ayI6eyJrdHkiOiJFQyIsImNydiI6IlAtMjU2IiwieCI6InNDTHAtWURTRWpvT0tjV253Y0NRaXh1YXoxSHhpNGZzUjNZci1icEVUdnciLCJ5IjoiVEk5TlB5NVIxRUlvUDBjRHcwWDR1VTZFcy1rT0dwMllJd3VyV0YwRy1TUSJ9fSwiYWN0aW9ucyI6WyJhY2NvdW50cy5yZWFkIl0sImNvdW50ZXJwYXJ0aWVzIjpbImFjcXVhdml2YS5leGFtcGxlIiwibHVtZW4tZW5lcmdpYS5leGFtcGxlIl0sImxpbWl0cyI6eyJjdXJyZW5jeSI6IkVVUiIsInBlcl9vcGVyYXRpb24iOjE1MDAwLCJ0b3RhbCI6MzAwMDB9LCJuYmYiOjE3OTMwMTM0NjIsImV4cCI6MTc5NTYwNTQ2Mn0sInBhcmVudF9pZCI6Ijg2ZTQxY2Y1LWQ0NjgtNDVkYi1hNGEzLTM1N2ZjODk5YzNmNyIsInBhcmVudF9oYXNoIjoib0xTbWE2eHBpeWM2VFk4ck8yWWkyaVVGaUhKSjNpYzR5d2VtbmljSFBKSSIsImlhdCI6MTc5MzAxMzQ2Mn0.i1xoxqu71o3cHZWfB8PrRLLt7P366c1IuxJZZ2cXN48InJRXsoblGA-JuZJ9A2nvaivWo9pXjGPCtTfsxjRcKw"
+        ]
+      },
+      "invocation": "eyJhbGciOiJFUzI1NiIsInR5cCI6InBsZW5pcG8taW52b2NhdGlvbitqd3QifQ.eyJtYW5kYXRlIjoiZDc3MjQ1YzUtMTA0Yy00NmY0LWFmODYtYTQwZDIyYWE2ZTkyIiwiYWN0aW9uIjoicGF5bWVudHMudHJhbnNmZXIiLCJjb3VudGVycGFydHkiOiJhY3F1YXZpdmEuZXhhbXBsZSIsImFtb3VudCI6eyJ2YWx1ZSI6MTAwMCwiY3VycmVuY3kiOiJFVVIifSwiYXVkIjoiaHR0cHM6Ly9iYW5rLmV4YW1wbGUiLCJub25jZSI6ImM5YzYzZWIxLTIwMDQtNDk3Yy1hMWU4LTQxM2YxNjQ0NmI0MCIsImlhdCI6MTc5MzAxMzQ2MiwiY2hhaW5faGFzaCI6InBGN2tReEI2YklseDRDMHRWbXBDZ3ctb0I4X01VSGoyNVdxTTBweU1Da3cifQ.-L0mgLTTcCnzEvEckrMIt1-_x-RHsNHB7MDBCfvMl2zT_6HXkhIQcrj5tVnVx4sURwLEBepLZnVcfmfHSirllA",
+      "verifier": {
+        "audience": "https://bank.example",
+        "now": 1793013463
+      },
+      "expect": {
+        "decision": "DENY",
+        "code": "ACTION_NOT_PERMITTED",
+        "at": 1
+      }
+    },
+    {
+      "id": "deny-forged-delegation",
+      "description": "A delegation not signed by the parent agent.",
+      "chain": {
+        "root": {
+          "transaction_data": "eyJjcmVkZW50aWFsX2lkcyI6WyJwaWQiXSwibWFuZGF0ZSI6eyJhY3Rpb25zIjpbInBheW1lbnRzLnRyYW5zZmVyIiwiYWNjb3VudHMucmVhZCJdLCJhZ2VudCI6eyJqd2siOnsiY3J2IjoiUC0yNTYiLCJrdHkiOiJFQyIsIngiOiJ4bDM4Q2lDOXN4dTZmZkl6WHVqS0lQMVNNY3JBby1lR3BIZ2h0eGdKUTJRIiwieSI6IjFFZmctRVA3UGFNVDJPTGI5MktFN0tvSFhrak1TREdOcDY4b2dnRy1SUU0ifX0sImNvdW50ZXJwYXJ0aWVzIjpbImFjcXVhdml2YS5leGFtcGxlIiwibHVtZW4tZW5lcmdpYS5leGFtcGxlIl0sImRlbGVnYXRpb24iOnsibWF4X2RlcHRoIjoxfSwiZXhwIjoxNzk1NjA1NDYyLCJpZCI6Ijg2ZTQxY2Y1LWQ0NjgtNDVkYi1hNGEzLTM1N2ZjODk5YzNmNyIsImxpbWl0cyI6eyJjdXJyZW5jeSI6IkVVUiIsInBlcl9vcGVyYXRpb24iOjE1MDAwLCJ0b3RhbCI6MzAwMDB9LCJuYmYiOjE3OTMwMTM0NjIsInB1cnBvc2UiOiJQYXkgdGhlIGhvdXNlaG9sZCBiaWxscyIsInYiOiIwLjEifSwidHlwZSI6InBsZW5pcG9fbWFuZGF0ZSJ9",
+          "presentation": "eyJ0eXAiOiJkYytzZC1qd3QiLCJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJodHRwczovL3BpZC1wcm92aWRlci50ZXN0IiwiaWF0IjoxNzkzMDEzNDYyLCJleHAiOjE4MjQ1NDk0NjIsInZjdCI6InVybjpldWRpOnBpZDoxIiwiY25mIjp7Imp3ayI6eyJrZXlfb3BzIjpbInZlcmlmeSJdLCJleHQiOnRydWUsImt0eSI6IkVDIiwieCI6IjJYd19VS0xNTm5NeVlsTE5Ha0g5ODJTWlZqQ08xYzF0NF9ZMnk2YkFHZjAiLCJ5IjoiRUtYVjNack84eHR2TUd0blJEa29keHVEMEhMNGxTV0R5QnpDdWc4QlFQTSIsImNydiI6IlAtMjU2In19LCJfc2QiOlsicFhPYmtjWWpLdFZJUFVIaGk1NGE1S0RhSk1lMWFUZmZKMVNZcXlKWnE3VSIsInNBeTl3N3ladmNxSjlRdW9rcUJHcVhjbDNvTDdzWDlIaGg3b2VQcHhidUkiXSwiX3NkX2FsZyI6InNoYS0yNTYifQ.YHaSwgB6c1Q-HvXt_ecf_Twvr9_vr4eGKwXJxINZKENIiyxW4-2n6NSIiot-r3nYG_OzH8I9Vs2F0H9ViVjigw~WyIwNDNkYmVhZTU2ZWVlZDYyIiwiZ2l2ZW5fbmFtZSIsIk1hcmlhIl0~WyJkMzA1NjRiYTE4M2EwYjQ0IiwiZmFtaWx5X25hbWUiLCJSb3NzaSJd~eyJ0eXAiOiJrYitqd3QiLCJhbGciOiJFUzI1NiJ9.eyJpYXQiOjE3OTMwMTM0NjIsImF1ZCI6InBsZW5pcG86bWFuZGF0ZS1yZXF1ZXN0Iiwibm9uY2UiOiJiMDVjNTJiZS01ZTRjLTRjMjktYTdjOC1mNWFiNjRiN2MyN2QiLCJ0cmFuc2FjdGlvbl9kYXRhX2hhc2hlcyI6WyJzTXNZeXJOUFFlalBGNXNjdVNkUV9FZnJxekNLVHVySlFpR1I2ZF9wVlZJIl0sInRyYW5zYWN0aW9uX2RhdGFfaGFzaGVzX2FsZyI6InNoYS0yNTYiLCJzZF9oYXNoIjoiUmE4ajlpMjkyUnoyQ0VTRmEyb2V5S09sRUtsbHdSeTlpTS1mUkRVLVFFVSJ9.eQHySfV84nhwkXz4BvwG-Bl4xNGkn0zAVcmOvoI70Pe8GoixMr4YaRoI95Njf87cdOHQIA4HVsAAG4E_Ku1icg"
+        },
+        "delegations": [
+          "eyJhbGciOiJFUzI1NiIsInR5cCI6InBsZW5pcG8tZGVsZWdhdGlvbitqd3QifQ.eyJtYW5kYXRlIjp7InYiOiIwLjEiLCJpZCI6ImQ3NzI0NWM1LTEwNGMtNDZmNC1hZjg2LWE0MGQyMmFhNmU5MiIsImFnZW50Ijp7Imp3ayI6eyJrdHkiOiJFQyIsImNydiI6IlAtMjU2IiwieCI6InNDTHAtWURTRWpvT0tjV253Y0NRaXh1YXoxSHhpNGZzUjNZci1icEVUdnciLCJ5IjoiVEk5TlB5NVIxRUlvUDBjRHcwWDR1VTZFcy1rT0dwMllJd3VyV0YwRy1TUSJ9fSwiYWN0aW9ucyI6WyJhY2NvdW50cy5yZWFkIl0sImNvdW50ZXJwYXJ0aWVzIjpbImFjcXVhdml2YS5leGFtcGxlIiwibHVtZW4tZW5lcmdpYS5leGFtcGxlIl0sImxpbWl0cyI6eyJjdXJyZW5jeSI6IkVVUiIsInBlcl9vcGVyYXRpb24iOjE1MDAwLCJ0b3RhbCI6MzAwMDB9LCJuYmYiOjE3OTMwMTM0NjIsImV4cCI6MTc5NTYwNTQ2Mn0sInBhcmVudF9pZCI6Ijg2ZTQxY2Y1LWQ0NjgtNDVkYi1hNGEzLTM1N2ZjODk5YzNmNyIsInBhcmVudF9oYXNoIjoib0xTbWE2eHBpeWM2VFk4ck8yWWkyaVVGaUhKSjNpYzR5d2VtbmljSFBKSSIsImlhdCI6MTc5MzAxMzQ2Mn0.BECczMuQY3sLdUkMMXGIdJ38lj8A_5AeGF1GbqI6JUFjhKXcMCCK0sJrrST5QFMeNymsZo48Gk6ocy3PkhmlcQ"
+        ]
+      },
+      "invocation": "eyJhbGciOiJFUzI1NiIsInR5cCI6InBsZW5pcG8taW52b2NhdGlvbitqd3QifQ.eyJtYW5kYXRlIjoiZDc3MjQ1YzUtMTA0Yy00NmY0LWFmODYtYTQwZDIyYWE2ZTkyIiwiYWN0aW9uIjoiYWNjb3VudHMucmVhZCIsImNvdW50ZXJwYXJ0eSI6ImFjcXVhdml2YS5leGFtcGxlIiwiYW1vdW50Ijp7InZhbHVlIjowLCJjdXJyZW5jeSI6IkVVUiJ9LCJhdWQiOiJodHRwczovL2JhbmsuZXhhbXBsZSIsIm5vbmNlIjoiNmRlOWM0YjYtNzg2MS00YmMyLWFmYTktMTAwMDNmMDA0ZmUwIiwiaWF0IjoxNzkzMDEzNDYyLCJjaGFpbl9oYXNoIjoiQ0pXNE1WMUpWUGRxUllpQWMxSmJuSFdQS0RyOFhzZzBFSHlCNTNoV3hBVSJ9.Xt2JB2qMEEpGsFOWV7xdtA3eVPoCbBcvrnsqUAU_hJXcRY9IdostJYYsKsdJXVl8r_48aanRbK9CaimBMegRfg",
+      "verifier": {
+        "audience": "https://bank.example",
+        "now": 1793013463
+      },
+      "expect": {
+        "decision": "DENY",
+        "code": "DELEGATION_SIGNATURE_INVALID",
+        "at": 1
+      }
+    },
+    {
+      "id": "deny-expired",
+      "description": "The verifier clock is past the mandate expiry.",
+      "chain": {
+        "root": {
+          "transaction_data": "eyJjcmVkZW50aWFsX2lkcyI6WyJwaWQiXSwibWFuZGF0ZSI6eyJhY3Rpb25zIjpbInBheW1lbnRzLnRyYW5zZmVyIiwiYWNjb3VudHMucmVhZCJdLCJhZ2VudCI6eyJqd2siOnsiY3J2IjoiUC0yNTYiLCJrdHkiOiJFQyIsIngiOiJ4bDM4Q2lDOXN4dTZmZkl6WHVqS0lQMVNNY3JBby1lR3BIZ2h0eGdKUTJRIiwieSI6IjFFZmctRVA3UGFNVDJPTGI5MktFN0tvSFhrak1TREdOcDY4b2dnRy1SUU0ifX0sImNvdW50ZXJwYXJ0aWVzIjpbImFjcXVhdml2YS5leGFtcGxlIiwibHVtZW4tZW5lcmdpYS5leGFtcGxlIl0sImRlbGVnYXRpb24iOnsibWF4X2RlcHRoIjoxfSwiZXhwIjoxNzk1NjA1NDYyLCJpZCI6Ijg2ZTQxY2Y1LWQ0NjgtNDVkYi1hNGEzLTM1N2ZjODk5YzNmNyIsImxpbWl0cyI6eyJjdXJyZW5jeSI6IkVVUiIsInBlcl9vcGVyYXRpb24iOjE1MDAwLCJ0b3RhbCI6MzAwMDB9LCJuYmYiOjE3OTMwMTM0NjIsInB1cnBvc2UiOiJQYXkgdGhlIGhvdXNlaG9sZCBiaWxscyIsInYiOiIwLjEifSwidHlwZSI6InBsZW5pcG9fbWFuZGF0ZSJ9",
+          "presentation": "eyJ0eXAiOiJkYytzZC1qd3QiLCJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJodHRwczovL3BpZC1wcm92aWRlci50ZXN0IiwiaWF0IjoxNzkzMDEzNDYyLCJleHAiOjE4MjQ1NDk0NjIsInZjdCI6InVybjpldWRpOnBpZDoxIiwiY25mIjp7Imp3ayI6eyJrZXlfb3BzIjpbInZlcmlmeSJdLCJleHQiOnRydWUsImt0eSI6IkVDIiwieCI6IjJYd19VS0xNTm5NeVlsTE5Ha0g5ODJTWlZqQ08xYzF0NF9ZMnk2YkFHZjAiLCJ5IjoiRUtYVjNack84eHR2TUd0blJEa29keHVEMEhMNGxTV0R5QnpDdWc4QlFQTSIsImNydiI6IlAtMjU2In19LCJfc2QiOlsicFhPYmtjWWpLdFZJUFVIaGk1NGE1S0RhSk1lMWFUZmZKMVNZcXlKWnE3VSIsInNBeTl3N3ladmNxSjlRdW9rcUJHcVhjbDNvTDdzWDlIaGg3b2VQcHhidUkiXSwiX3NkX2FsZyI6InNoYS0yNTYifQ.YHaSwgB6c1Q-HvXt_ecf_Twvr9_vr4eGKwXJxINZKENIiyxW4-2n6NSIiot-r3nYG_OzH8I9Vs2F0H9ViVjigw~WyIwNDNkYmVhZTU2ZWVlZDYyIiwiZ2l2ZW5fbmFtZSIsIk1hcmlhIl0~WyJkMzA1NjRiYTE4M2EwYjQ0IiwiZmFtaWx5X25hbWUiLCJSb3NzaSJd~eyJ0eXAiOiJrYitqd3QiLCJhbGciOiJFUzI1NiJ9.eyJpYXQiOjE3OTMwMTM0NjIsImF1ZCI6InBsZW5pcG86bWFuZGF0ZS1yZXF1ZXN0Iiwibm9uY2UiOiJiMDVjNTJiZS01ZTRjLTRjMjktYTdjOC1mNWFiNjRiN2MyN2QiLCJ0cmFuc2FjdGlvbl9kYXRhX2hhc2hlcyI6WyJzTXNZeXJOUFFlalBGNXNjdVNkUV9FZnJxekNLVHVySlFpR1I2ZF9wVlZJIl0sInRyYW5zYWN0aW9uX2RhdGFfaGFzaGVzX2FsZyI6InNoYS0yNTYiLCJzZF9oYXNoIjoiUmE4ajlpMjkyUnoyQ0VTRmEyb2V5S09sRUtsbHdSeTlpTS1mUkRVLVFFVSJ9.eQHySfV84nhwkXz4BvwG-Bl4xNGkn0zAVcmOvoI70Pe8GoixMr4YaRoI95Njf87cdOHQIA4HVsAAG4E_Ku1icg"
+        },
+        "delegations": []
+      },
+      "invocation": "eyJhbGciOiJFUzI1NiIsInR5cCI6InBsZW5pcG8taW52b2NhdGlvbitqd3QifQ.eyJtYW5kYXRlIjoiODZlNDFjZjUtZDQ2OC00NWRiLWE0YTMtMzU3ZmM4OTljM2Y3IiwiYWN0aW9uIjoicGF5bWVudHMudHJhbnNmZXIiLCJjb3VudGVycGFydHkiOiJhY3F1YXZpdmEuZXhhbXBsZSIsImFtb3VudCI6eyJ2YWx1ZSI6MTAwMCwiY3VycmVuY3kiOiJFVVIifSwiYXVkIjoiaHR0cHM6Ly9iYW5rLmV4YW1wbGUiLCJub25jZSI6IjA5ZmYxYThkLWYxOTMtNDQ2Zi04NzU2LTFjOTlkMTk0OTAxZiIsImlhdCI6MTc5MzAxMzQ2MiwiY2hhaW5faGFzaCI6IlJyNkRIVG5FRFVhRnNVWGdyNzIyT3BzVVFNNEdOWDk0Y1NncWZ5ajYzRWsifQ.5w7rzIhL-8teYRCje4Fj51nsYwizjlPk1hJrl-rr2UgfDked829r6R_PMbAWcI-6DGx3WE6qX5tz9X7ZWuJdEw",
+      "verifier": {
+        "audience": "https://bank.example",
+        "now": 1795605463
+      },
+      "expect": {
+        "decision": "DENY",
+        "code": "EXPIRED",
+        "at": 0
+      }
+    },
+    {
+      "id": "deny-unknown-member",
+      "description": "An invocation with a member the profile does not define.",
+      "chain": {
+        "root": {
+          "transaction_data": "eyJjcmVkZW50aWFsX2lkcyI6WyJwaWQiXSwibWFuZGF0ZSI6eyJhY3Rpb25zIjpbInBheW1lbnRzLnRyYW5zZmVyIiwiYWNjb3VudHMucmVhZCJdLCJhZ2VudCI6eyJqd2siOnsiY3J2IjoiUC0yNTYiLCJrdHkiOiJFQyIsIngiOiJ4bDM4Q2lDOXN4dTZmZkl6WHVqS0lQMVNNY3JBby1lR3BIZ2h0eGdKUTJRIiwieSI6IjFFZmctRVA3UGFNVDJPTGI5MktFN0tvSFhrak1TREdOcDY4b2dnRy1SUU0ifX0sImNvdW50ZXJwYXJ0aWVzIjpbImFjcXVhdml2YS5leGFtcGxlIiwibHVtZW4tZW5lcmdpYS5leGFtcGxlIl0sImRlbGVnYXRpb24iOnsibWF4X2RlcHRoIjoxfSwiZXhwIjoxNzk1NjA1NDYyLCJpZCI6Ijg2ZTQxY2Y1LWQ0NjgtNDVkYi1hNGEzLTM1N2ZjODk5YzNmNyIsImxpbWl0cyI6eyJjdXJyZW5jeSI6IkVVUiIsInBlcl9vcGVyYXRpb24iOjE1MDAwLCJ0b3RhbCI6MzAwMDB9LCJuYmYiOjE3OTMwMTM0NjIsInB1cnBvc2UiOiJQYXkgdGhlIGhvdXNlaG9sZCBiaWxscyIsInYiOiIwLjEifSwidHlwZSI6InBsZW5pcG9fbWFuZGF0ZSJ9",
+          "presentation": "eyJ0eXAiOiJkYytzZC1qd3QiLCJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJodHRwczovL3BpZC1wcm92aWRlci50ZXN0IiwiaWF0IjoxNzkzMDEzNDYyLCJleHAiOjE4MjQ1NDk0NjIsInZjdCI6InVybjpldWRpOnBpZDoxIiwiY25mIjp7Imp3ayI6eyJrZXlfb3BzIjpbInZlcmlmeSJdLCJleHQiOnRydWUsImt0eSI6IkVDIiwieCI6IjJYd19VS0xNTm5NeVlsTE5Ha0g5ODJTWlZqQ08xYzF0NF9ZMnk2YkFHZjAiLCJ5IjoiRUtYVjNack84eHR2TUd0blJEa29keHVEMEhMNGxTV0R5QnpDdWc4QlFQTSIsImNydiI6IlAtMjU2In19LCJfc2QiOlsicFhPYmtjWWpLdFZJUFVIaGk1NGE1S0RhSk1lMWFUZmZKMVNZcXlKWnE3VSIsInNBeTl3N3ladmNxSjlRdW9rcUJHcVhjbDNvTDdzWDlIaGg3b2VQcHhidUkiXSwiX3NkX2FsZyI6InNoYS0yNTYifQ.YHaSwgB6c1Q-HvXt_ecf_Twvr9_vr4eGKwXJxINZKENIiyxW4-2n6NSIiot-r3nYG_OzH8I9Vs2F0H9ViVjigw~WyIwNDNkYmVhZTU2ZWVlZDYyIiwiZ2l2ZW5fbmFtZSIsIk1hcmlhIl0~WyJkMzA1NjRiYTE4M2EwYjQ0IiwiZmFtaWx5X25hbWUiLCJSb3NzaSJd~eyJ0eXAiOiJrYitqd3QiLCJhbGciOiJFUzI1NiJ9.eyJpYXQiOjE3OTMwMTM0NjIsImF1ZCI6InBsZW5pcG86bWFuZGF0ZS1yZXF1ZXN0Iiwibm9uY2UiOiJiMDVjNTJiZS01ZTRjLTRjMjktYTdjOC1mNWFiNjRiN2MyN2QiLCJ0cmFuc2FjdGlvbl9kYXRhX2hhc2hlcyI6WyJzTXNZeXJOUFFlalBGNXNjdVNkUV9FZnJxekNLVHVySlFpR1I2ZF9wVlZJIl0sInRyYW5zYWN0aW9uX2RhdGFfaGFzaGVzX2FsZyI6InNoYS0yNTYiLCJzZF9oYXNoIjoiUmE4ajlpMjkyUnoyQ0VTRmEyb2V5S09sRUtsbHdSeTlpTS1mUkRVLVFFVSJ9.eQHySfV84nhwkXz4BvwG-Bl4xNGkn0zAVcmOvoI70Pe8GoixMr4YaRoI95Njf87cdOHQIA4HVsAAG4E_Ku1icg"
+        },
+        "delegations": []
+      },
+      "invocation": "eyJhbGciOiJFUzI1NiIsInR5cCI6InBsZW5pcG8taW52b2NhdGlvbitqd3QifQ.eyJtYW5kYXRlIjoiODZlNDFjZjUtZDQ2OC00NWRiLWE0YTMtMzU3ZmM4OTljM2Y3IiwiYWN0aW9uIjoicGF5bWVudHMudHJhbnNmZXIiLCJjb3VudGVycGFydHkiOiJhY3F1YXZpdmEuZXhhbXBsZSIsImFtb3VudCI6eyJ2YWx1ZSI6MTAwMCwiY3VycmVuY3kiOiJFVVIifSwiYXVkIjoiaHR0cHM6Ly9iYW5rLmV4YW1wbGUiLCJub25jZSI6InZlY3Rvci11bmtub3duLW1lbWJlciIsImlhdCI6MTc5MzAxMzQ2MiwiYXJnc19oYXNoIjoiSlBWX2hBS3NJeDFMNW5OVHBTNl91dmE2WnNjVTB4RUMydTFSMHo4SEJDbyIsImNoYWluX2hhc2giOiJScjZESFRuRURVYUZzVVhncjcyMk9wc1VRTTRHTlg5NGNTZ3FmeWo2M0VrIiwicHJpb3JpdHkiOiJoaWdoIn0._ShqQBOAz09frpwrsRhv4P0zU5MAf-yNpIJLm_YOACg5067ShpMkszSndO02dvm4BUjixv1wPAZ2y2HZz3mDVA",
+      "verifier": {
+        "audience": "https://bank.example",
+        "now": 1793013463
+      },
+      "expect": {
+        "decision": "DENY",
+        "code": "MALFORMED"
+      }
+    },
+    {
+      "id": "deny-idem-without-args",
+      "description": "An idempotency key without an argument hash.",
+      "chain": {
+        "root": {
+          "transaction_data": "eyJjcmVkZW50aWFsX2lkcyI6WyJwaWQiXSwibWFuZGF0ZSI6eyJhY3Rpb25zIjpbInBheW1lbnRzLnRyYW5zZmVyIiwiYWNjb3VudHMucmVhZCJdLCJhZ2VudCI6eyJqd2siOnsiY3J2IjoiUC0yNTYiLCJrdHkiOiJFQyIsIngiOiJ4bDM4Q2lDOXN4dTZmZkl6WHVqS0lQMVNNY3JBby1lR3BIZ2h0eGdKUTJRIiwieSI6IjFFZmctRVA3UGFNVDJPTGI5MktFN0tvSFhrak1TREdOcDY4b2dnRy1SUU0ifX0sImNvdW50ZXJwYXJ0aWVzIjpbImFjcXVhdml2YS5leGFtcGxlIiwibHVtZW4tZW5lcmdpYS5leGFtcGxlIl0sImRlbGVnYXRpb24iOnsibWF4X2RlcHRoIjoxfSwiZXhwIjoxNzk1NjA1NDYyLCJpZCI6Ijg2ZTQxY2Y1LWQ0NjgtNDVkYi1hNGEzLTM1N2ZjODk5YzNmNyIsImxpbWl0cyI6eyJjdXJyZW5jeSI6IkVVUiIsInBlcl9vcGVyYXRpb24iOjE1MDAwLCJ0b3RhbCI6MzAwMDB9LCJuYmYiOjE3OTMwMTM0NjIsInB1cnBvc2UiOiJQYXkgdGhlIGhvdXNlaG9sZCBiaWxscyIsInYiOiIwLjEifSwidHlwZSI6InBsZW5pcG9fbWFuZGF0ZSJ9",
+          "presentation": "eyJ0eXAiOiJkYytzZC1qd3QiLCJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJodHRwczovL3BpZC1wcm92aWRlci50ZXN0IiwiaWF0IjoxNzkzMDEzNDYyLCJleHAiOjE4MjQ1NDk0NjIsInZjdCI6InVybjpldWRpOnBpZDoxIiwiY25mIjp7Imp3ayI6eyJrZXlfb3BzIjpbInZlcmlmeSJdLCJleHQiOnRydWUsImt0eSI6IkVDIiwieCI6IjJYd19VS0xNTm5NeVlsTE5Ha0g5ODJTWlZqQ08xYzF0NF9ZMnk2YkFHZjAiLCJ5IjoiRUtYVjNack84eHR2TUd0blJEa29keHVEMEhMNGxTV0R5QnpDdWc4QlFQTSIsImNydiI6IlAtMjU2In19LCJfc2QiOlsicFhPYmtjWWpLdFZJUFVIaGk1NGE1S0RhSk1lMWFUZmZKMVNZcXlKWnE3VSIsInNBeTl3N3ladmNxSjlRdW9rcUJHcVhjbDNvTDdzWDlIaGg3b2VQcHhidUkiXSwiX3NkX2FsZyI6InNoYS0yNTYifQ.YHaSwgB6c1Q-HvXt_ecf_Twvr9_vr4eGKwXJxINZKENIiyxW4-2n6NSIiot-r3nYG_OzH8I9Vs2F0H9ViVjigw~WyIwNDNkYmVhZTU2ZWVlZDYyIiwiZ2l2ZW5fbmFtZSIsIk1hcmlhIl0~WyJkMzA1NjRiYTE4M2EwYjQ0IiwiZmFtaWx5X25hbWUiLCJSb3NzaSJd~eyJ0eXAiOiJrYitqd3QiLCJhbGciOiJFUzI1NiJ9.eyJpYXQiOjE3OTMwMTM0NjIsImF1ZCI6InBsZW5pcG86bWFuZGF0ZS1yZXF1ZXN0Iiwibm9uY2UiOiJiMDVjNTJiZS01ZTRjLTRjMjktYTdjOC1mNWFiNjRiN2MyN2QiLCJ0cmFuc2FjdGlvbl9kYXRhX2hhc2hlcyI6WyJzTXNZeXJOUFFlalBGNXNjdVNkUV9FZnJxekNLVHVySlFpR1I2ZF9wVlZJIl0sInRyYW5zYWN0aW9uX2RhdGFfaGFzaGVzX2FsZyI6InNoYS0yNTYiLCJzZF9oYXNoIjoiUmE4ajlpMjkyUnoyQ0VTRmEyb2V5S09sRUtsbHdSeTlpTS1mUkRVLVFFVSJ9.eQHySfV84nhwkXz4BvwG-Bl4xNGkn0zAVcmOvoI70Pe8GoixMr4YaRoI95Njf87cdOHQIA4HVsAAG4E_Ku1icg"
+        },
+        "delegations": []
+      },
+      "invocation": "eyJhbGciOiJFUzI1NiIsInR5cCI6InBsZW5pcG8taW52b2NhdGlvbitqd3QifQ.eyJtYW5kYXRlIjoiODZlNDFjZjUtZDQ2OC00NWRiLWE0YTMtMzU3ZmM4OTljM2Y3IiwiYWN0aW9uIjoicGF5bWVudHMudHJhbnNmZXIiLCJjb3VudGVycGFydHkiOiJhY3F1YXZpdmEuZXhhbXBsZSIsImFtb3VudCI6eyJ2YWx1ZSI6MTAwMCwiY3VycmVuY3kiOiJFVVIifSwiYXVkIjoiaHR0cHM6Ly9iYW5rLmV4YW1wbGUiLCJub25jZSI6InZlY3Rvci1pZGVtLW5vLWFyZ3MiLCJpYXQiOjE3OTMwMTM0NjIsImNoYWluX2hhc2giOiJScjZESFRuRURVYUZzVVhncjcyMk9wc1VRTTRHTlg5NGNTZ3FmeWo2M0VrIiwiaWRlbSI6IjAxMjM0NTY3ODlhYmNkZWYwMTIzNDU2Nzg5YWJjZGVmIn0.ZtyHKqMA53sSQHBRenzJk5T8uw16A4gbIMe336Ud3-poKzQ-HLJ6GbF-OiCGwre0BKg71riuxuNgYc0aFNT9ZQ",
+      "verifier": {
+        "audience": "https://bank.example",
+        "now": 1793013463
+      },
+      "expect": {
+        "decision": "DENY",
+        "code": "MALFORMED"
+      }
+    },
+    {
+      "id": "deny-idem-without-store",
+      "description": "An idempotency key sent to a verifier that keeps no idempotency keys.",
+      "chain": {
+        "root": {
+          "transaction_data": "eyJjcmVkZW50aWFsX2lkcyI6WyJwaWQiXSwibWFuZGF0ZSI6eyJhY3Rpb25zIjpbInBheW1lbnRzLnRyYW5zZmVyIiwiYWNjb3VudHMucmVhZCJdLCJhZ2VudCI6eyJqd2siOnsiY3J2IjoiUC0yNTYiLCJrdHkiOiJFQyIsIngiOiJ4bDM4Q2lDOXN4dTZmZkl6WHVqS0lQMVNNY3JBby1lR3BIZ2h0eGdKUTJRIiwieSI6IjFFZmctRVA3UGFNVDJPTGI5MktFN0tvSFhrak1TREdOcDY4b2dnRy1SUU0ifX0sImNvdW50ZXJwYXJ0aWVzIjpbImFjcXVhdml2YS5leGFtcGxlIiwibHVtZW4tZW5lcmdpYS5leGFtcGxlIl0sImRlbGVnYXRpb24iOnsibWF4X2RlcHRoIjoxfSwiZXhwIjoxNzk1NjA1NDYyLCJpZCI6Ijg2ZTQxY2Y1LWQ0NjgtNDVkYi1hNGEzLTM1N2ZjODk5YzNmNyIsImxpbWl0cyI6eyJjdXJyZW5jeSI6IkVVUiIsInBlcl9vcGVyYXRpb24iOjE1MDAwLCJ0b3RhbCI6MzAwMDB9LCJuYmYiOjE3OTMwMTM0NjIsInB1cnBvc2UiOiJQYXkgdGhlIGhvdXNlaG9sZCBiaWxscyIsInYiOiIwLjEifSwidHlwZSI6InBsZW5pcG9fbWFuZGF0ZSJ9",
+          "presentation": "eyJ0eXAiOiJkYytzZC1qd3QiLCJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJodHRwczovL3BpZC1wcm92aWRlci50ZXN0IiwiaWF0IjoxNzkzMDEzNDYyLCJleHAiOjE4MjQ1NDk0NjIsInZjdCI6InVybjpldWRpOnBpZDoxIiwiY25mIjp7Imp3ayI6eyJrZXlfb3BzIjpbInZlcmlmeSJdLCJleHQiOnRydWUsImt0eSI6IkVDIiwieCI6IjJYd19VS0xNTm5NeVlsTE5Ha0g5ODJTWlZqQ08xYzF0NF9ZMnk2YkFHZjAiLCJ5IjoiRUtYVjNack84eHR2TUd0blJEa29keHVEMEhMNGxTV0R5QnpDdWc4QlFQTSIsImNydiI6IlAtMjU2In19LCJfc2QiOlsicFhPYmtjWWpLdFZJUFVIaGk1NGE1S0RhSk1lMWFUZmZKMVNZcXlKWnE3VSIsInNBeTl3N3ladmNxSjlRdW9rcUJHcVhjbDNvTDdzWDlIaGg3b2VQcHhidUkiXSwiX3NkX2FsZyI6InNoYS0yNTYifQ.YHaSwgB6c1Q-HvXt_ecf_Twvr9_vr4eGKwXJxINZKENIiyxW4-2n6NSIiot-r3nYG_OzH8I9Vs2F0H9ViVjigw~WyIwNDNkYmVhZTU2ZWVlZDYyIiwiZ2l2ZW5fbmFtZSIsIk1hcmlhIl0~WyJkMzA1NjRiYTE4M2EwYjQ0IiwiZmFtaWx5X25hbWUiLCJSb3NzaSJd~eyJ0eXAiOiJrYitqd3QiLCJhbGciOiJFUzI1NiJ9.eyJpYXQiOjE3OTMwMTM0NjIsImF1ZCI6InBsZW5pcG86bWFuZGF0ZS1yZXF1ZXN0Iiwibm9uY2UiOiJiMDVjNTJiZS01ZTRjLTRjMjktYTdjOC1mNWFiNjRiN2MyN2QiLCJ0cmFuc2FjdGlvbl9kYXRhX2hhc2hlcyI6WyJzTXNZeXJOUFFlalBGNXNjdVNkUV9FZnJxekNLVHVySlFpR1I2ZF9wVlZJIl0sInRyYW5zYWN0aW9uX2RhdGFfaGFzaGVzX2FsZyI6InNoYS0yNTYiLCJzZF9oYXNoIjoiUmE4ajlpMjkyUnoyQ0VTRmEyb2V5S09sRUtsbHdSeTlpTS1mUkRVLVFFVSJ9.eQHySfV84nhwkXz4BvwG-Bl4xNGkn0zAVcmOvoI70Pe8GoixMr4YaRoI95Njf87cdOHQIA4HVsAAG4E_Ku1icg"
+        },
+        "delegations": []
+      },
+      "invocation": "eyJhbGciOiJFUzI1NiIsInR5cCI6InBsZW5pcG8taW52b2NhdGlvbitqd3QifQ.eyJtYW5kYXRlIjoiODZlNDFjZjUtZDQ2OC00NWRiLWE0YTMtMzU3ZmM4OTljM2Y3IiwiYWN0aW9uIjoicGF5bWVudHMudHJhbnNmZXIiLCJjb3VudGVycGFydHkiOiJhY3F1YXZpdmEuZXhhbXBsZSIsImFtb3VudCI6eyJ2YWx1ZSI6MTAwMCwiY3VycmVuY3kiOiJFVVIifSwiYXVkIjoiaHR0cHM6Ly9iYW5rLmV4YW1wbGUiLCJub25jZSI6InZlY3Rvci1pZGVtLW5vLXN0b3JlIiwiaWF0IjoxNzkzMDEzNDYyLCJhcmdzX2hhc2giOiJKUFZfaEFLc0l4MUw1bk5UcFM2X3V2YTZac2NVMHhFQzJ1MVIwejhIQkNvIiwiY2hhaW5faGFzaCI6IlJyNkRIVG5FRFVhRnNVWGdyNzIyT3BzVVFNNEdOWDk0Y1NncWZ5ajYzRWsiLCJpZGVtIjoiMDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWYifQ.-5T4uqkS7Nk3qK2Kbpp8Bnrr3es6jXxchNfbRzkQD_LYMaE3dHghavdhooPihGdmUobD5Z0I6VJ2nIv5oYPsIQ",
+      "verifier": {
+        "audience": "https://bank.example",
+        "now": 1793013463
+      },
+      "expect": {
+        "decision": "DENY",
+        "code": "CONFIGURATION"
+      }
+    }
+  ]
+}

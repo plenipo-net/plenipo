@@ -28,6 +28,8 @@ export interface CallOutcome {
   text: string;
   isError: boolean;
   data?: Record<string, unknown>;
+  /** The bank returned the stored result of an earlier attempt with the same idempotency key. */
+  replay?: boolean;
 }
 
 export interface SignedCall {
@@ -174,7 +176,7 @@ export class SandboxAgentClient {
   }
 
   /** Asks the platform, which holds the agent's key, to sign an invocation. */
-  async sign(mandateId: string, call: { action: string; counterparty?: string; amount?: Amount; aud: string; args: unknown }) {
+  async sign(mandateId: string, call: { action: string; counterparty?: string; amount?: Amount; aud: string; args: unknown; idempotency_key?: string }) {
     return this.post<{ chain: MandateChain; invocation: string }>(`${this.endpoints.platform}/api/mandates/${mandateId}/invocations`, call);
   }
 
@@ -206,12 +208,20 @@ export class SandboxAgentClient {
     return Object.fromEntries(Object.entries(args ?? {}).filter(([k, v]) => props.includes(k) && v !== undefined));
   }
 
-  /** Builds a signed call without sending it, so a scenario can send it twice (replay). */
-  async prepareCall(mandateId: string, name: string, rawArgs: Record<string, unknown>): Promise<SignedCall> {
+  /**
+   * Builds a signed call without sending it, so a scenario can send it twice (replay). With
+   * `idempotencyKey`, the invocation carries it: every attempt of one intention uses the same key.
+   */
+  async prepareCall(mandateId: string, name: string, rawArgs: Record<string, unknown>, opts: { idempotencyKey?: string } = {}): Promise<SignedCall> {
     const tool = (await this.listTools()).find((t) => t.name === name);
     if (!tool) throw new Error(`the bank has no tool ${name}`);
     const args = this.normaliseArgs(tool, rawArgs);
-    const signed = await this.sign(mandateId, { ...invocationFields(bindCall(tool.binding, args)), aud: tool.binding.audience, args });
+    const signed = await this.sign(mandateId, {
+      ...invocationFields(bindCall(tool.binding, args)),
+      aud: tool.binding.audience,
+      args,
+      ...(opts.idempotencyKey ? { idempotency_key: opts.idempotencyKey } : {}),
+    });
     return { name, args, meta: signed };
   }
 
@@ -222,11 +232,13 @@ export class SandboxAgentClient {
     const sc = (res.structuredContent ?? {}) as Record<string, unknown>;
     const plenipo = sc.plenipo as { decision: 'DENY'; code: string } | undefined;
     if (plenipo?.decision === 'DENY') return { decision: 'DENY', code: plenipo.code, text, isError: true };
-    return { decision: 'ALLOW', code: res.isError ? String(sc.error ?? 'error') : undefined, text, isError: Boolean(res.isError), data: sc };
+    // The stored answer of an earlier attempt with the same idempotency key: the bank did not run it again.
+    const replay = (res._meta as Record<string, unknown> | undefined)?.['plenipo/replay'] === true;
+    return { decision: 'ALLOW', code: res.isError ? String(sc.error ?? 'error') : undefined, text, isError: Boolean(res.isError), data: sc, ...(replay ? { replay } : {}) };
   }
 
-  async callTool(mandateId: string, name: string, args: Record<string, unknown>): Promise<CallOutcome> {
-    return this.send(await this.prepareCall(mandateId, name, args));
+  async callTool(mandateId: string, name: string, args: Record<string, unknown>, opts: { idempotencyKey?: string } = {}): Promise<CallOutcome> {
+    return this.send(await this.prepareCall(mandateId, name, args, opts));
   }
 
   // ---- PSD2-like REST ----

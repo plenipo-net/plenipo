@@ -83,6 +83,8 @@ Each prints PASS or FAIL against the expected outcome, step by step.
 | `sub-delegation` | The agent delegates "AcquaViva only, 50 each, 60 total" to a sub-agent, which then exceeds it four ways; a wider delegation is refused at signing | ALLOW, then `LIMIT_PER_OPERATION`, `LIMIT_TOTAL`, `COUNTERPARTY_NOT_PERMITTED`, `ACTION_NOT_PERMITTED` |
 | `replay` | A captured signed call is sent twice | ALLOW, then `REPLAY` |
 | `concurrent` | Two 60 euro payments at once against a 100 total | exactly one ALLOW, one `LIMIT_TOTAL` |
+| `idempotent-retry` | The answer to a payment is lost; the agent sends the same call again with the same idempotency key | the stored result of the first payment, paid once; the same key for another amount is `IDEMPOTENCY_CONFLICT` |
+| `retry-after-crash` | Core banking times out after debiting; the agent retries with the same key | `IDEMPOTENCY_UNRESOLVED` until the bank reconciles, then `ALREADY_EXECUTED`; debited once (not run on request in a public sandbox) |
 | `expired` | A one-hour mandate, then the bank clock moved one hour ahead | ALLOW, then `EXPIRED` |
 | `pid-revoked` | The PID provider revokes Luca's PID | `PID_REVOKED` at the bank; the platform refuses a new mandate from that PID; reinstated afterwards |
 | `tampered-mandate` | The agent rewrites its own mandate to 1,500 euro per payment | `TX_DATA_MISMATCH`: the wallet signed the hash of the original bytes |
@@ -145,6 +147,15 @@ Claude act at the bank: it holds the agent key itself, asks the platform for a m
 `request_mandate` and returns the wallet link for you to approve, mirrors the bank's tools and signs
 every call for its exact arguments and chain. The bridge runs with Node on your machine, also when the
 sandbox runs in Docker: `cd sandbox && npm ci && npm run build:bridge`.
+
+Its state (agent key, approved chain, a request waiting for approval) lives in a private file,
+`sandbox/.plenipo-bridge.json` by default (`PLENIPO_BRIDGE_STATE`), so a restart of Claude picks up where
+it left off. The bank marks `transfer` as idempotent: the bridge gives each payment an idempotency key and
+writes it to the state file before the call goes out. When the bank does not answer, or Claude restarts
+mid-call, calling `transfer` again with the same arguments reuses the key, so the bank answers instead of
+paying twice; once a payment's outcome is known, the same arguments are a new payment. The bank lists
+payments with an unknown outcome at `GET /api/idempotency` and settles them with
+`POST /admin/idempotency/<key>/resolve` (`{"outcome": "executed" | "not_executed"}`).
 
 In Claude Desktop (Settings, Developer, Edit Config) add an entry with absolute paths, since Claude
 Desktop does not start servers from your shell:

@@ -11,6 +11,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { z } from 'zod';
 import {
+  InMemoryIdempotencyStore,
   InMemoryNonceStore,
   InMemorySpendingLedger,
   mandateHash,
@@ -116,7 +117,12 @@ function fail(error: string, text: string): ToolResult {
 
 export async function startBank(opts: BankOptions): Promise<BankService> {
   const events = new EventLog('bank');
-  const stores: BankStores = opts.stores ?? { kind: 'memory', ledger: new InMemorySpendingLedger(), nonces: new InMemoryNonceStore() };
+  const stores: BankStores = opts.stores ?? {
+    kind: 'memory',
+    ledger: new InMemorySpendingLedger(),
+    nonces: new InMemoryNonceStore(),
+    idempotency: new InMemoryIdempotencyStore(),
+  };
   // Admin switch: the next transfer debits the account and then throws, like a core banking call that times
   // out after the money left. The guard then leaves the reservation pending (unknown outcome).
   let failNextTransfer = false;
@@ -184,6 +190,8 @@ export async function startBank(opts: BankOptions): Promise<BankService> {
       audience,
       nonces: stores.nonces,
       ledger: stores.ledger,
+      // Transfers carry idempotency keys: a retry after an unknown outcome is answered, never paid again.
+      idempotency: stores.idempotency,
       requiredPrincipalClaims: ['given_name', 'family_name', 'birthdate'],
       // TS12 e-mandate roots are experimental and opt-in; the sandbox accepts them bound to the PID.
       emandate: { allowPidBinding: true },
@@ -311,7 +319,13 @@ export async function startBank(opts: BankOptions): Promise<BankService> {
   const bindings: Record<string, ToolBinding> = {
     get_balance: { action: 'account.read', audience: audiences.mcp, counterparty: null, amount: null },
     list_payees: { action: 'account.read', audience: audiences.mcp, counterparty: null, amount: null },
-    transfer: { action: 'payments.transfer', audience: audiences.mcp, counterparty: { arg: 'payee' }, amount: { arg: 'amount_cents', currency: 'EUR' } },
+    transfer: {
+      action: 'payments.transfer',
+      audience: audiences.mcp,
+      counterparty: { arg: 'payee' },
+      amount: { arg: 'amount_cents', currency: 'EUR' },
+      idempotent: true,
+    },
     block_card: { action: 'card.block', audience: audiences.mcp, counterparty: null, amount: null },
   };
 
@@ -438,16 +452,37 @@ export async function startBank(opts: BankOptions): Promise<BankService> {
       expected: { action: call.action, counterparty: call.counterparty, amount: call.amount, args },
     });
     recordDecision('rest', tool, d, call, invocation);
-    if (d.decision === 'DENY') return sendJson(res, 403, { decision: 'DENY', code: d.code, reason: d.reason });
+    if (d.decision === 'DENY') {
+      // The retry of a payment that already ran: the stored answer, not a second payment.
+      if (d.code === 'ALREADY_EXECUTED' && d.replay?.result !== undefined) {
+        return sendJson(res, 200, { ...(JSON.parse(d.replay.result) as Record<string, unknown>), replay: true });
+      }
+      const conflict = d.code === 'ALREADY_EXECUTED' || d.code.startsWith('IDEMPOTENCY_');
+      return sendJson(res, conflict ? 409 : 403, { decision: 'DENY', code: d.code, reason: d.reason });
+    }
     const acct = accountFor(d);
-    // As in guardTool: a throw is an unknown outcome, so the reservation stays pending for the sweep.
-    const result = acct ? run(acct, d.invocation.mandate) : fail('no_account', 'no account for this person');
+    const attempt = d.idempotency;
+    // As in guardTool: a throw is an unknown outcome, so the reservation stays pending for the sweep and the
+    // idempotency key blocks retries until someone reconciles the payment.
+    let result: ToolResult;
+    try {
+      result = acct ? run(acct, d.invocation.mandate) : fail('no_account', 'no account for this person');
+    } catch (e) {
+      if (attempt) await stores.idempotency.finish(attempt.key, attempt.attempt, 'unknown').catch(() => undefined);
+      throw e;
+    }
+    const body = { decision: 'ALLOW', ...(result.structuredContent ?? {}) };
+    if (attempt) {
+      await stores.idempotency
+        .finish(attempt.key, attempt.attempt, result.isError ? 'not_executed' : 'executed', result.isError ? undefined : JSON.stringify(body))
+        .catch(() => undefined);
+    }
     if (d.reservation) {
       if (result.isError) await stores.ledger.release(d.reservation);
       else await stores.ledger.commit(d.reservation);
     }
     events.append('ledger', { tool, outcome: result.isError ? 'not_executed' : 'executed', reservation: Boolean(d.reservation), usage: await usage(d.mandates, 'EUR') });
-    sendJson(res, result.isError ? 422 : 200, { decision: 'ALLOW', ...(result.structuredContent ?? {}) });
+    sendJson(res, result.isError ? 422 : 200, body);
   }
 
   router.get('/psd2/v1/accounts/balance', (req, res) => restCall(req, res, 'get_balance', {}, (acct) => getBalance(acct)));
@@ -575,6 +610,19 @@ export async function startBank(opts: BankOptions): Promise<BankService> {
     events.append('reservation_reconciled', { reservation: req.params.id, outcome: body.outcome, state });
     await sweep();
     sendJson(res, 200, { state });
+  });
+  // ---- Idempotency keys whose payment has an unknown outcome ----
+  router.get('/api/idempotency', async (_req, res) => {
+    const open = await stores.idempotency.unresolved({ limit: 100 });
+    sendJson(res, 200, { unresolved: open.map((r) => ({ key: r.key, state: r.state, reservation: r.reservation ?? null })) });
+  });
+  router.post('/admin/idempotency/:key/resolve', async (req, res) => {
+    checkAdmin(req, opts.adminToken);
+    const body = await readFields(req);
+    if (body.outcome !== 'executed' && body.outcome !== 'not_executed') throw new HttpError(400, 'outcome must be executed or not_executed');
+    const changed = await stores.idempotency.resolve(req.params.key, body.outcome);
+    events.append('idempotency_resolved', { key: req.params.key, outcome: body.outcome, changed });
+    sendJson(res, 200, { changed });
   });
   router.post('/admin/fail-next-transfer', (req, res) => {
     checkAdmin(req, opts.adminToken);

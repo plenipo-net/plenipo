@@ -19,6 +19,7 @@ import {
   delegateMandate,
   generateAgentKey,
   handleMandateResponse,
+  IDEMPOTENCY_KEY_RE,
   InMemoryNonceStore,
   nowSeconds,
   RootError,
@@ -585,6 +586,9 @@ export async function startPlatform(opts: PlatformOptions): Promise<PlatformServ
     if (typeof body.action !== 'string' || typeof body.aud !== 'string') throw new HttpError(400, 'action and aud required');
     if (body.counterparty !== undefined && typeof body.counterparty !== 'string') throw new HttpError(400, 'invalid counterparty');
     if (body.nonce !== undefined && typeof body.nonce !== 'string') throw new HttpError(400, 'invalid nonce');
+    if (body.idempotency_key !== undefined && (typeof body.idempotency_key !== 'string' || !IDEMPOTENCY_KEY_RE.test(body.idempotency_key))) {
+      throw new HttpError(400, 'invalid idempotency_key');
+    }
     const agent = agents.get(m.agentId)!;
     if (!agent.key) throw new HttpError(409, 'this agent holds its own key: it signs its invocations itself');
     const invocation = await createInvocation(agent.key.privateKey, {
@@ -595,6 +599,7 @@ export async function startPlatform(opts: PlatformOptions): Promise<PlatformServ
       aud: body.aud,
       nonce: body.nonce as string | undefined,
       args: body.args,
+      ...(typeof body.idempotency_key === 'string' ? { idempotencyKey: body.idempotency_key } : {}),
       // The invocation is bound to the exact chain presented with it (chain_hash).
       chain: m.chain,
     });

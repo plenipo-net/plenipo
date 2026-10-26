@@ -1,10 +1,10 @@
--- Plenipo shared stores, schema version 3.
+-- Plenipo shared stores, schema version 4.
 CREATE TABLE IF NOT EXISTS plenipo_schema_meta (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   version INTEGER NOT NULL
 );
 
-INSERT INTO plenipo_schema_meta (id, version) VALUES (1, 3) ON CONFLICT (id) DO NOTHING;
+INSERT INTO plenipo_schema_meta (id, version) VALUES (1, 4) ON CONFLICT (id) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS plenipo_ledger (
   mandate_key TEXT COLLATE "C" NOT NULL CHECK (length(mandate_key) BETWEEN 1 AND 256),
@@ -49,6 +49,10 @@ BEGIN
     ALTER TABLE plenipo_reservations ADD COLUMN IF NOT EXISTS corrected_at TIMESTAMPTZ;
     UPDATE plenipo_schema_meta SET version = 3 WHERE id = 1;
   END IF;
+  -- Version 3 to 4: only a new table (idempotency keys), created below.
+  IF (SELECT version FROM plenipo_schema_meta WHERE id = 1) < 4 THEN
+    UPDATE plenipo_schema_meta SET version = 4 WHERE id = 1;
+  END IF;
 END
 $plenipo$;
 
@@ -76,6 +80,22 @@ CREATE TABLE IF NOT EXISTS plenipo_request_sessions (
 );
 
 CREATE INDEX IF NOT EXISTS plenipo_request_sessions_expiry_idx ON plenipo_request_sessions (expires_at);
+
+CREATE TABLE IF NOT EXISTS plenipo_idempotency (
+  key TEXT COLLATE "C" PRIMARY KEY CHECK (length(key) BETWEEN 1 AND 256),
+  fingerprint TEXT NOT NULL CHECK (length(fingerprint) BETWEEN 1 AND 256),
+  state TEXT NOT NULL CHECK (state IN ('in_progress', 'unknown', 'executed', 'free')),
+  attempt UUID NOT NULL,
+  reservation TEXT CHECK (reservation IS NULL OR length(reservation) BETWEEN 1 AND 256),
+  result TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  lease_until TIMESTAMPTZ,
+  expires_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS plenipo_idempotency_open_idx ON plenipo_idempotency (lease_until) WHERE state IN ('in_progress', 'unknown');
+
+CREATE INDEX IF NOT EXISTS plenipo_idempotency_expiry_idx ON plenipo_idempotency (expires_at) WHERE state IN ('executed', 'free');
 
 CREATE OR REPLACE FUNCTION plenipo_ledger_reserve(
   p_id UUID, p_keys TEXT[], p_totals BIGINT[], p_currency TEXT, p_amount BIGINT, p_ttl_seconds DOUBLE PRECISION
