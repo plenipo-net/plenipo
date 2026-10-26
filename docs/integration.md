@@ -329,9 +329,14 @@ const gateway = createGateway({
 
 The gateway ends the attempt with the same rule as the reservation: a commit
 marks the key executed and keeps the response (status, `Content-Type` and body,
-up to `maxReplayBytes`, default 64 KiB), a release frees the key, a pending
-outcome blocks it until reconciled. A retry is then answered without calling
-the API:
+up to `maxReplayBytes`, default 64 KiB, at most `MAX_REPLAY_BODY_BYTES`), a
+release frees the key, a pending outcome blocks it until reconciled. Only a
+committed request that carries a key is read: the gateway reads its body once,
+for at most a second, and hands the client a response rebuilt from what it read
+followed by the rest of the stream, so a large or streamed body reaches the
+client unchanged and is simply not kept. In authorize mode, pass what to keep
+as `settle({ status }, { status, contentType, body })`. A retry is then
+answered without calling the API:
 
 | The first attempt | The retry gets |
 | --- | --- |
@@ -347,6 +352,15 @@ A verifier without an idempotency store refuses invocations that carry a key
 which routes accept keys. Reconcile unknown outcomes as for reservations
 (docs/stores.md, "Idempotency keys").
 
+A key is scoped to the audience and the chain, and compared by action,
+counterparty, amount and argument hash: it does not name the route or the
+tool. Give each operation its own action, or arguments that tell it apart.
+With the default `args` of a route, method and path are part of the argument
+hash, so routes never share a key. For MCP tools, where the arguments are the
+tool's own, two tools with the same action and the same arguments would: a
+balance read and an account freeze both called with `{}` must not share
+`accounts.read`.
+
 ### Revocation latency
 
 A revoked mandate stops being accepted when the verifier sees the new status
@@ -359,7 +373,10 @@ For routes that move money, set `maxStatusAgeSeconds` on the route (or on the
 verify options of a `guardTool`): a cached list older than that is fetched
 again, and the default fetcher asks caches on the way for a copy no older
 than that (`Cache-Control: max-age=<n>`). `0` fetches the list on every
-request; reads can keep using the cache.
+request; reads can keep using the cache. The verifier cannot see how long an
+HTTP cache kept the copy it gets: with a CDN in front of the status service,
+make it honour request `Cache-Control` or bypass it for status lists, and a
+custom `statusFetcher` should pass the bound on.
 
 ```ts
 { method: 'POST', path: '/payments', action: 'payments.transfer', counterparty, amount, maxStatusAgeSeconds: 5 }

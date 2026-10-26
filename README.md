@@ -14,10 +14,10 @@ Every mandate has a scope, limits and an expiry, every sub-delegation can only n
 and the person can revoke it at any time.
 
 > Status: 0.5, experimental. The cryptography is real; wallets, PID providers and banks in
-> the examples and the sandbox are test doubles. The code went through two rounds of security review
-> by independent AI review agents, and their findings are fixed (see [CHANGELOG.md](CHANGELOG.md)); it
-> has not yet been audited by an external security firm. Do not use it to protect real money or real
-> data yet.
+> the examples and the sandbox are test doubles. The code went through security reviews by independent
+> AI review agents (two rounds for 0.3, one for 0.5), and their findings are fixed (see
+> [CHANGELOG.md](CHANGELOG.md)); it has not yet been audited by an external security firm. Do not use it
+> to protect real money or real data yet.
 
 ## Why Plenipo
 

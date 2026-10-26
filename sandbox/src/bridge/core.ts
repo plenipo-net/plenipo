@@ -30,10 +30,34 @@ export interface BridgeState {
   mandate?: { id: string; chain: MandateChain; mandate: Mandate; approvedAt: string };
   last?: LastDecision;
   /**
-   * The last call to an idempotent tool whose outcome is not known yet. Written before the call is sent, so
-   * it survives a crash or a restart of the host; cleared once the bank's answer settles the outcome.
+   * Calls to idempotent tools whose outcome is not settled yet, by mandate, tool and arguments, each with its
+   * idempotency key. An entry is written before the call is sent, so it survives a crash or a restart of the
+   * host, and stays until the bank's answer settles the call: other calls in between do not touch it.
    */
+  open?: Record<string, { idem: string; at: string }>;
+  /** 0.5.0 drafts kept a single open call; read once and moved into `open`. */
   retry?: { tool: string; args_hash: string; idem: string; mandate_id: string; at: string };
+}
+
+/** Open calls are kept this long at most (the bank forgets executed keys after a day) and this many at most. */
+const OPEN_CALL_MAX_AGE_MS = 24 * 3600_000;
+const OPEN_CALL_MAX = 200;
+
+function openCallKey(mandateId: string, tool: string, argsHashValue: string): string {
+  return `${mandateId}|${tool}|${argsHashValue}`;
+}
+
+/** The open calls of a state, the 0.5.0 draft slot folded in, without entries too old or too many. */
+function openCalls(state: BridgeState): Record<string, { idem: string; at: string }> {
+  const open = { ...(state.open ?? {}) };
+  const r = state.retry;
+  if (r) open[openCallKey(r.mandate_id, r.tool, r.args_hash)] ??= { idem: r.idem, at: r.at };
+  const now = Date.now();
+  const kept = Object.entries(open)
+    .filter(([, v]) => now - Date.parse(v.at) < OPEN_CALL_MAX_AGE_MS)
+    .sort(([, a], [, b]) => Date.parse(b.at) - Date.parse(a.at))
+    .slice(0, OPEN_CALL_MAX);
+  return Object.fromEntries(kept);
 }
 
 export interface LastDecision {
@@ -144,8 +168,12 @@ export const DENY_EXPLANATIONS: Record<string, string> = {
   ALREADY_EXECUTED: 'the earlier attempt of this call was already executed: nothing was paid a second time',
 };
 
-/** Deny codes after which the outcome of the call is still open: the next identical call is a retry. */
-const STILL_OPEN = new Set(['IDEMPOTENCY_IN_PROGRESS', 'IDEMPOTENCY_UNRESOLVED', 'STATUS_UNAVAILABLE', 'INTERNAL']);
+/**
+ * Deny codes that settle a call: the earlier attempt ran, or the key belongs to another request. Any other
+ * denial may come before the bank even looked at the key (a suspended mandate, a stale invocation), so the
+ * call stays open and its next identical call reuses the key.
+ */
+const SETTLES = new Set(['ALREADY_EXECUTED', 'IDEMPOTENCY_CONFLICT']);
 
 const euroToCents = (v: number) => Math.round(v * 100);
 
@@ -411,13 +439,16 @@ export class BridgeCore {
     const args = Object.fromEntries(Object.entries(rawArgs ?? {}).filter(([k, v]) => props.includes(k) && v !== undefined));
     const chain = state.mandate.chain;
     const key = await importJWK(state.agent.privateJwk, 'ES256');
-    // One key per intention: a call identical to one whose outcome is still unknown is its retry.
+    // One key per intention: a call identical to one whose outcome is still open is its retry.
     let idem: string | undefined;
+    let openKey: string | undefined;
     if (tool.binding.idempotent) {
-      const fingerprint = argsHash({ tool: name, args });
-      const open = state.retry;
-      idem = open && open.tool === name && open.args_hash === fingerprint && open.mandate_id === state.mandate.id ? open.idem : newIdempotencyKey();
-      state.retry = { tool: name, args_hash: fingerprint, idem, mandate_id: state.mandate.id, at: new Date().toISOString() };
+      openKey = openCallKey(state.mandate.id, name, argsHash(args));
+      const open = openCalls(state);
+      idem = open[openKey]?.idem ?? newIdempotencyKey();
+      open[openKey] = { idem, at: open[openKey]?.at ?? new Date().toISOString() };
+      state.open = open;
+      delete state.retry;
       await this.store.save(state);
     }
     const invocation = await createInvocation(key as CryptoKey, {
@@ -438,12 +469,12 @@ export class BridgeCore {
       chain_hash: inv.chain_hash ?? chainHash(chain),
       ...(inv.idem ? { idem: inv.idem } : {}),
     };
-    /** Clears the open retry once the bank's answer settles the outcome of this call. */
+    /** Forgets the open call once the bank's answer settles it; the next identical call is a new one. */
     const settled = async () => {
-      if (!idem) return;
+      if (!idem || !openKey) return;
       const s = await this.store.load();
-      if (s.retry?.idem === idem) {
-        delete s.retry;
+      if (s.open?.[openKey]?.idem === idem) {
+        delete s.open[openKey];
         await this.store.save(s);
       }
     };
@@ -467,9 +498,10 @@ export class BridgeCore {
       return { isError: true, text };
     }
     const deny = (data?.plenipo as { decision?: string; code?: string } | undefined)?.decision === 'DENY' ? (data!.plenipo as { code: string }).code : undefined;
-    // An error from the tool itself may follow a payment that went out: keep the key for the retry. Any other
-    // answer settles the call, and the next identical call is a new payment with a new key.
-    if (!(deny ? STILL_OPEN.has(deny) : isError)) await settled();
+    // Settled: a success (the payment, or the stored answer of an earlier attempt), ALREADY_EXECUTED, or a key
+    // that belongs to another request. An error from the tool may follow a payment that went out, and most
+    // denials come before the bank looked at the key: the call stays open and its retry reuses the key.
+    if (deny ? SETTLES.has(deny) : !isError) await settled();
     if (replay) text = `This call had already been executed: the bank returned the original result instead of paying again.\n${text}`;
     await record({ args, invocation: summary, decision: deny ? 'DENY' : isError ? 'ERROR' : 'ALLOW', code: deny ?? (isError ? String(data?.error ?? '') || undefined : undefined), text });
     this.log(`${name}: ${deny ? `DENY ${deny}` : isError ? 'error' : 'ALLOW'}`);

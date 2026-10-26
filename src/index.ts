@@ -8,6 +8,7 @@ export {
   newIdempotencyKey,
   IDEMPOTENCY_KEY_RE,
   DEFAULT_MAX_REPLAY_BYTES,
+  MAX_STORED_RESULT_BYTES,
   type IdempotencyStore,
   type IdempotencyStoreOptions,
   type IdempotencyRecord,
@@ -107,6 +108,7 @@ export {
   outcomeFromHeader,
   OUTCOME_HEADER,
   REPLAY_HEADER,
+  MAX_REPLAY_BODY_BYTES,
   DEFAULT_MAX_BODY_BYTES,
   type SettlementOutcome,
   type Gateway,
@@ -119,6 +121,7 @@ export {
   type PolicyHook,
   type AuthorizeResult,
   type SettleInput,
+  type ReplayResponse,
   type AllowDecision,
   type DenyDecision,
 } from './http/gateway.js';

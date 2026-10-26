@@ -146,7 +146,12 @@ When the relying party finishes an attempt it records the outcome: executed (the
 the relying party's retention period), not executed (the key is free again) or unknown (the key stays
 blocked until reconciled). It MUST NOT free a key unless it is certain the action did not run. When the
 attempt holds a spending reservation, a reconciliation of the reservation settles the key too: committed
-means executed, released means not executed.
+means executed, released means not executed. A reconciliation settles the attempt it is about and no
+other: if a newer attempt holds the key by then, the key is left alone.
+
+The key's scope does not name the tool or route, only the audience and the chain, and the fingerprint
+does not name it either. A relying party that keeps keys MUST therefore make the action and the arguments
+determine the operation: two operations that share an action and arguments would share a key's result.
 
 At most one attempt per key reaches the action: claiming a free key is atomic, also across instances that
 share a store.
@@ -166,8 +171,8 @@ The verifier runs these checks in order and stops at the first failure:
 7. Scope on every mandate of the chain: action, counterparty, currency, per-operation limit.
 8. Checks that need the network: revocation of the PID provider certificate when configured, the PID
    status list, and the status list of every mandate that has one.
-9. Idempotency (section 5.1), when the invocation carries `idem`. For `ALREADY_EXECUTED` the nonce is
-   consumed first, so a copy of the retry cannot read the stored result again.
+9. Idempotency (section 5.1), when the invocation carries `idem`. For every idempotency refusal the
+   nonce is consumed first, so a copy of the retry cannot come back later and read the stored result.
 10. Spending: an atomic reservation against every total limit of the chain.
 11. Replay: the nonce is consumed last, so a denied invocation does not use up its nonce. A failure in
     steps 10 and 11 frees the idempotency key claimed in step 9.
@@ -175,7 +180,9 @@ The verifier runs these checks in order and stops at the first failure:
 A verifier MAY cache status lists. The time a cached list is used bounds how long a revocation can go
 unnoticed, and a relying party MAY require a shorter bound for some calls (a maximum age of the list, `0`
 for a fresh list), typically those that move money. A list fetched for such a call SHOULD be requested
-with `Cache-Control: max-age=<bound>`, so HTTP caches on the way do not answer with an older copy.
+with `Cache-Control: max-age=<bound>`, so HTTP caches on the way do not answer with an older copy. The
+verifier cannot tell how long a cache kept the copy it receives, so the bound holds only as far as the
+caches between it and the status list honour the request.
 
 Checks that fetch anything over the network come after the invocation has been authenticated and
 scoped, so a caller without a valid invocation cannot make the verifier fetch URLs.

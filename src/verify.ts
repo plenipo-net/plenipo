@@ -162,7 +162,8 @@ function canLookUp(ledger: SpendingLedger | undefined): ledger is SpendingLedger
 /**
  * Claims the idempotency key of an invocation for this attempt, or explains why it cannot run. A key held by
  * an attempt of unknown outcome follows the ledger when it can: a committed reservation means the action
- * ran, a released one means it did not (the ledger releases only on certainty), which frees the key.
+ * ran, a released one means it did not (the ledger releases only on certainty), which frees the key. The
+ * record is then read again, so the answer always describes the key as it is now.
  */
 async function claimIdempotencyKey(
   store: IdempotencyStore,
@@ -178,33 +179,41 @@ async function claimIdempotencyKey(
       ...(record?.result !== undefined ? { result: record.result } : {}),
     });
   };
-  for (let round = 0; round < 2; round++) {
+  // Every refusal below answers a fresh retry: its nonce is spent, so a copy of it cannot come back later,
+  // once the first attempt has executed, to read the stored result.
+  const refuse = async (code: DenyCode, message: string): Promise<never> => {
+    await consumeNonce();
+    throw new Deny(code, message);
+  };
+  for (let round = 0; round < 3; round++) {
     const claim = await store.claim(key, fingerprint);
     if (claim.claimed) return { key, attempt: claim.attempt };
     const record = claim.record;
     if (record.fingerprint !== fingerprint) {
-      throw new Deny('IDEMPOTENCY_CONFLICT', 'the idempotency key was already used for a different request');
+      return refuse('IDEMPOTENCY_CONFLICT', 'the idempotency key was already used for a different request');
     }
     if (record.state === 'executed') return alreadyExecuted(record);
     if (record.state === 'in_progress') {
-      throw new Deny('IDEMPOTENCY_IN_PROGRESS', 'an attempt with this idempotency key is still running');
+      return refuse('IDEMPOTENCY_IN_PROGRESS', 'an attempt with this idempotency key is still running');
     }
-    // Unknown outcome, or an abandoned attempt.
+    // Unknown outcome, or an abandoned attempt. The ledger settles it only for the attempt that held the key
+    // when it was read: `resolve` is compare-and-set on that attempt, so a concurrent retry that has already
+    // freed and taken the key is never released or marked by this one.
     if (record.reservation !== undefined && canLookUp(ledger)) {
       const info = await ledger.reservation(record.reservation);
       if (info?.state === 'committed') {
-        await store.resolve(key, 'executed');
-        return alreadyExecuted(undefined);
+        await store.resolve(key, 'executed', record.attempt);
+        continue;
       }
       if (info?.state === 'released') {
-        await store.resolve(key, 'not_executed');
+        await store.resolve(key, 'not_executed', record.attempt);
         continue;
       }
     }
-    throw new Deny('IDEMPOTENCY_UNRESOLVED', 'the outcome of an earlier attempt with this idempotency key is not known yet');
+    return refuse('IDEMPOTENCY_UNRESOLVED', 'the outcome of an earlier attempt with this idempotency key is not known yet');
   }
-  // The key was freed and taken again by a concurrent attempt in between.
-  throw new Deny('IDEMPOTENCY_IN_PROGRESS', 'an attempt with this idempotency key is still running');
+  // The record changed under us twice (a concurrent retry freed and took the key): it is in use.
+  return refuse('IDEMPOTENCY_IN_PROGRESS', 'an attempt with this idempotency key is still running');
 }
 
 function statusOriginsOf(trust: TrustConfig): string[] {

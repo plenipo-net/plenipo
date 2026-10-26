@@ -110,7 +110,7 @@ function contract(name: string, enabled: () => boolean, make: Factory) {
       expect(await b.get(k)).toMatchObject({ state: 'executed', result: '{"ok":true}', reservation: '6f1c8a3e-62a3-4d3a-9d6e-2a1f3c4b5d6e' });
       // Executed is final: nothing gives it back.
       await a.finish(k, c.attempt, 'not_executed');
-      expect(await a.resolve(k, 'not_executed')).toBe(false);
+      expect(await a.resolve(k, 'not_executed', c.attempt)).toBe(false);
       const again = await b.claim(k, 'fp');
       expect(again).toMatchObject({ claimed: false, record: { state: 'executed' } });
     });
@@ -131,7 +131,7 @@ function contract(name: string, enabled: () => boolean, make: Factory) {
       await a.finish(k2, c2.attempt, 'unknown');
       expect(await b.claim(k2, 'fp')).toMatchObject({ claimed: false, record: { state: 'unknown' } });
       expect((await b.unresolved()).map((r) => r.key)).toContain(k2);
-      expect(await b.resolve(k2, 'not_executed')).toBe(true);
+      expect(await b.resolve(k2, 'not_executed', c2.attempt)).toBe(true);
       expect((await b.unresolved()).map((r) => r.key)).not.toContain(k2);
       expect((await a.claim(k2, 'fp')).claimed).toBe(true);
     });
@@ -142,7 +142,7 @@ function contract(name: string, enabled: () => boolean, make: Factory) {
       const c = await a.claim(k, 'fp');
       if (!c.claimed) throw new Error('not claimed');
       await a.finish(k, c.attempt, 'unknown');
-      expect(await b.resolve(k, 'not_executed')).toBe(true);
+      expect(await b.resolve(k, 'not_executed', c.attempt)).toBe(true);
       await a.finish(k, c.attempt, 'executed', 'late');
       expect(await b.get(k)).toMatchObject({ state: 'executed', result: 'late', attempt: c.attempt });
 
@@ -166,7 +166,7 @@ function contract(name: string, enabled: () => boolean, make: Factory) {
       expect(await b.get(k)).toMatchObject({ state: 'unknown' });
       expect((await b.unresolved()).map((r) => r.key)).toContain(k);
       expect(await b.claim(k, 'fp')).toMatchObject({ claimed: false, record: { state: 'unknown' } });
-      expect(await a.resolve(k, 'executed')).toBe(true);
+      expect(await a.resolve(k, 'executed', (c as { attempt: string }).attempt)).toBe(true);
       expect(await b.get(k)).toMatchObject({ state: 'executed' });
     });
 
@@ -184,6 +184,24 @@ function contract(name: string, enabled: () => boolean, make: Factory) {
       expect(await b.get(done)).toBeUndefined();
       expect((await b.claim(done, 'fp')).claimed).toBe(true);
       expect(await b.get(open)).toMatchObject({ state: 'unknown' });
+    });
+
+    it('resolves only the attempt it names: an outcome learned about one attempt never settles a newer one', async () => {
+      const [a, b] = await make();
+      const k = key();
+      const first = await a.claim(k, 'fp');
+      if (!first.claimed) throw new Error('not claimed');
+      await a.finish(k, first.attempt, 'unknown');
+      const [listed] = (await b.unresolved({ limit: 10_000 })).filter((r) => r.key === k);
+      expect(listed.attempt).toBe(first.attempt);
+      expect(await b.resolve(k, 'not_executed', first.attempt)).toBe(true);
+      const second = await b.claim(k, 'fp');
+      if (!second.claimed) throw new Error('not claimed');
+      // A stale listing names the first attempt: nothing happens to the second.
+      expect(await a.resolve(k, 'not_executed', listed.attempt)).toBe(false);
+      expect(await a.resolve(k, 'executed', listed.attempt)).toBe(false);
+      expect(await a.claim(k, 'fp')).toMatchObject({ claimed: false, record: { state: 'in_progress', attempt: second.attempt } });
+      await expect(a.resolve(k, 'executed', 'not-an-attempt')).rejects.toThrow(/attempt/);
     });
 
     it('validates what it is given', async () => {
@@ -342,7 +360,7 @@ describe('verifyAuthorization with idempotency keys', () => {
     const first = allow(await verify(chain, await payment(chain, m, p), opts, p));
     await opts.idempotency!.finish(first.idempotency!.key, first.idempotency!.attempt, 'unknown');
     expect(await verify(chain, await payment(chain, m, p), opts, p)).toMatchObject({ decision: 'DENY', code: 'IDEMPOTENCY_UNRESOLVED' });
-    expect(await opts.idempotency!.resolve(first.idempotency!.key, 'not_executed')).toBe(true);
+    expect(await opts.idempotency!.resolve(first.idempotency!.key, 'not_executed', first.idempotency!.attempt)).toBe(true);
     allow(await verify(chain, await payment(chain, m, p), opts, p));
   });
 
@@ -495,7 +513,7 @@ describe('guardTool with idempotency keys', () => {
     expect(balance).toBe(7_000);
     // The bank finds the debit and reconciles: the retry learns the call ran.
     const [record] = await opts.idempotency!.unresolved();
-    expect(await opts.idempotency!.resolve(record.key, 'executed')).toBe(true);
+    expect(await opts.idempotency!.resolve(record.key, 'executed', record.attempt)).toBe(true);
     const after = await call(t, chain, m, args, idem);
     expect(after).toMatchObject({ structuredContent: { plenipo: { code: 'ALREADY_EXECUTED' } } });
     expect(handler).toHaveBeenCalledTimes(1);

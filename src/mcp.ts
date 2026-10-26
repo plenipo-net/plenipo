@@ -1,5 +1,5 @@
 import { argsHash } from './invocation.js';
-import { DEFAULT_MAX_REPLAY_BYTES, type AttemptOutcome } from './idempotency.js';
+import { DEFAULT_MAX_REPLAY_BYTES, MAX_STORED_RESULT_BYTES, type AttemptOutcome } from './idempotency.js';
 import { verifyAuthorization, type VerifyOptions } from './verify.js';
 import type { Amount, Decision, MandateChain } from './types.js';
 
@@ -145,16 +145,20 @@ export function guardTool<Args>(handler: Handler<Args>, opts: GuardOptions<Args>
     throw new Error('guardTool counterparty and amount must be functions or null');
   }
   const maxReplay = maxReplayBytes ?? DEFAULT_MAX_REPLAY_BYTES;
-  if (!Number.isSafeInteger(maxReplay) || maxReplay < 0) throw new Error('guardTool maxReplayBytes must be a non-negative integer');
+  if (!Number.isSafeInteger(maxReplay) || maxReplay < 0 || maxReplay > MAX_STORED_RESULT_BYTES) {
+    throw new Error(`guardTool maxReplayBytes must be an integer from 0 to ${MAX_STORED_RESULT_BYTES}, what a store accepts`);
+  }
   const ledger = verifyOpts.ledger;
   const store = verifyOpts.idempotency;
   /** Ends the attempt holding the idempotency key. A store that fails leaves it in progress, then unresolved: safe side. */
   const finish = async (decision: Decision, outcome: AttemptOutcome, result?: string) => {
     if (decision.decision !== 'ALLOW' || !decision.idempotency || !store) return;
+    const { key, attempt } = decision.idempotency;
     try {
-      await store.finish(decision.idempotency.key, decision.idempotency.attempt, outcome, result);
+      await store.finish(key, attempt, outcome, result);
     } catch {
-      /* see above */
+      // A store that refuses the result (too large for it) must still learn that the call ran.
+      if (result !== undefined) await store.finish(key, attempt, outcome).catch(() => undefined);
     }
   };
   /** Before the handler runs, the action certainly has not happened: give back the reservation and the key. */

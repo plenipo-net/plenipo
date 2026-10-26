@@ -801,16 +801,17 @@ export class PostgresIdempotencyStore implements IdempotencyStore {
     }
   }
 
-  async resolve(key: string, outcome: 'executed' | 'not_executed'): Promise<boolean> {
+  async resolve(key: string, outcome: 'executed' | 'not_executed', attempt: string): Promise<boolean> {
     validateIdempotencyKey(key);
     if (outcome !== 'executed' && outcome !== 'not_executed') throw new RangeError('outcome must be executed or not_executed');
+    if (!isAttemptId(attempt)) throw new RangeError('resolve needs the attempt that holds the key');
     const rows = rowsOf(
       await this.db.query(
         `UPDATE ${this.n.idempotency} SET state = $2, lease_until = NULL,
                 expires_at = now() + make_interval(secs => $3::double precision)
-          WHERE key = $1 AND state IN ('in_progress', 'unknown')
+          WHERE key = $1 AND attempt = $4::uuid AND state IN ('in_progress', 'unknown')
          RETURNING 1 AS ok`,
-        [key, outcome === 'executed' ? 'executed' : 'free', this.retentionSeconds],
+        [key, outcome === 'executed' ? 'executed' : 'free', this.retentionSeconds, attempt],
       ),
     );
     return rows.length === 1;

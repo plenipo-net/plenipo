@@ -78,11 +78,15 @@ export interface IdempotencyStore {
   finish(key: string, attempt: string, outcome: AttemptOutcome, result?: string): Promise<void>;
   /**
    * Reconciliation of a key whose attempt is `in_progress` or `unknown`: `executed` marks it executed (with
-   * no stored result), `not_executed` frees it. Returns whether the record changed.
+   * no stored result), `not_executed` frees it. Only when `attempt` still holds the key: an outcome learned
+   * about one attempt must never settle a newer one. Returns whether the record changed.
    */
-  resolve(key: string, outcome: 'executed' | 'not_executed'): Promise<boolean>;
+  resolve(key: string, outcome: 'executed' | 'not_executed', attempt: string): Promise<boolean>;
   get(key: string): Promise<IdempotencyRecord | undefined>;
-  /** Records blocked on an unknown outcome (including abandoned attempts), for a reconciliation job. */
+  /**
+   * Records blocked on an unknown outcome (including abandoned attempts), for a reconciliation job. Each
+   * names its attempt: pass it to `resolve`.
+   */
   unresolved(opts?: { limit?: number }): Promise<IdempotencyRecord[]>;
   /** How long an executed record is kept, in seconds. */
   readonly retentionSeconds: number;
@@ -168,6 +172,9 @@ export interface IdempotencyStoreOptions {
   leaseSeconds?: number;
 }
 
+/** The in-memory store sweeps expired records at most this often, in milliseconds (or each retention period). */
+const SWEEP_INTERVAL_MS = 60_000;
+
 interface MemoryEntry {
   fingerprint: string;
   /** `free`: the attempt certainly did not run; the key can be claimed again. Kept so a late "executed" still lands. */
@@ -188,6 +195,7 @@ export class InMemoryIdempotencyStore implements IdempotencyStore {
   readonly leaseSeconds: number;
   private readonly entries = new Map<string, MemoryEntry>();
   private readonly clock: () => number;
+  private nextSweep = 0;
 
   constructor(opts: IdempotencyStoreOptions & { /** Clock in milliseconds, for tests. */ now?: () => number } = {}) {
     this.retentionSeconds = idempotencyDuration('retentionSeconds', opts.retentionSeconds, 24 * 3600);
@@ -195,8 +203,27 @@ export class InMemoryIdempotencyStore implements IdempotencyStore {
     this.clock = opts.now ?? Date.now;
   }
 
+  /** Deletes executed and free records past their retention. Returns how many were deleted. */
+  sweep(): number {
+    const now = this.clock();
+    let n = 0;
+    for (const [k, e] of this.entries) {
+      if ((e.state === 'executed' || e.state === 'free') && e.until <= now) {
+        this.entries.delete(k);
+        n++;
+      }
+    }
+    return n;
+  }
+
   /** The entry with time applied: expired records dropped, abandoned attempts turned unknown. */
   private current(key: string): MemoryEntry | undefined {
+    // Amortised: records nobody touches again would otherwise stay forever.
+    const t = this.clock();
+    if (t >= this.nextSweep) {
+      this.nextSweep = t + Math.min(SWEEP_INTERVAL_MS, this.retentionSeconds * 1000);
+      this.sweep();
+    }
     const e = this.entries.get(key);
     if (!e) return undefined;
     const now = this.clock();
@@ -260,11 +287,12 @@ export class InMemoryIdempotencyStore implements IdempotencyStore {
     }
   }
 
-  async resolve(key: string, outcome: 'executed' | 'not_executed'): Promise<boolean> {
+  async resolve(key: string, outcome: 'executed' | 'not_executed', attempt: string): Promise<boolean> {
     validateIdempotencyKey(key);
     if (outcome !== 'executed' && outcome !== 'not_executed') throw new RangeError('outcome must be executed or not_executed');
+    if (!isAttemptId(attempt)) throw new RangeError('resolve needs the attempt that holds the key');
     const e = this.current(key);
-    if (!e || (e.state !== 'in_progress' && e.state !== 'unknown')) return false;
+    if (!e || e.attempt !== attempt || (e.state !== 'in_progress' && e.state !== 'unknown')) return false;
     e.state = outcome === 'executed' ? 'executed' : 'free';
     e.until = this.clock() + this.retentionSeconds * 1000;
     return true;

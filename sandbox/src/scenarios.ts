@@ -288,10 +288,10 @@ export const SCENARIOS: Scenario[] = [
       const crashed = await c.client.callTool(m, 'transfer', args, { idempotencyKey: key });
       c.check('the bank does not answer: outcome unknown', crashed.decision === 'ALLOW' && crashed.isError && /did not answer in time/.test(crashed.text), 'ALLOW, then a timeout', describe(crashed));
       c.expect('retry with the same key', await c.client.callTool(m, 'transfer', args, { idempotencyKey: key }), 'IDEMPOTENCY_UNRESOLVED');
-      const open = (await (await fetch(`${c.urls.bank}/api/idempotency`)).json()) as { unresolved: Array<{ key: string }> };
+      const open = (await (await fetch(`${c.urls.bank}/api/idempotency`)).json()) as { unresolved: Array<{ key: string; attempt: string }> };
       c.check('the bank lists the payment for reconciliation', open.unresolved.length >= 1, 'at least one unresolved key', `${open.unresolved.length}`);
       // The bank finds the debit in its books and records it as executed.
-      for (const r of open.unresolved) await c.admin(`${c.urls.bank}/admin/idempotency/${encodeURIComponent(r.key)}/resolve`, { outcome: 'executed' });
+      for (const r of open.unresolved) await c.admin(`${c.urls.bank}/admin/idempotency/${encodeURIComponent(r.key)}/resolve`, { outcome: 'executed', attempt: r.attempt });
       c.expect('retry after the reconciliation', await c.client.callTool(m, 'transfer', args, { idempotencyKey: key }), 'ALREADY_EXECUTED');
       const after = await c.client.restBalance(m, c.audiences.rest);
       const diff = Number(before.body.balance_cents) - Number(after.body.balance_cents);

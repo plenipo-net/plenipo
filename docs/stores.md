@@ -353,18 +353,27 @@ ran wins, as in the ledger: an `executed` from an attempt whose key was freed
 in the meantime, and not claimed again, still marks the key executed.
 
 **Reconciliation.** `unresolved()` lists the keys blocked on an unknown
-outcome; `resolve(key, 'executed' | 'not_executed')` settles one. When the
-attempt held a reservation of a Postgres or Redis ledger, reconciling the
-reservation is enough: on the next retry the verifier reads the reservation, a
-committed one marks the key executed and a released one frees it. Keys of
-calls that reserved nothing (no total limit) need `resolve`.
+outcome, each with the attempt that holds it; `resolve(key, 'executed' |
+'not_executed', attempt)` settles that attempt. `resolve` is compare-and-set on
+the attempt: an outcome learned about one attempt never settles a newer one
+that took the key in the meantime, whether it comes from an operator acting on
+an old listing or from a concurrent retry. When the attempt held a reservation
+of a Postgres or Redis ledger, reconciling the reservation is enough: on the
+next retry the verifier reads the reservation, a committed one marks that
+attempt executed and a released one frees the key. Keys of calls that reserved
+nothing (no total limit) need `resolve`. `InMemoryIdempotencyStore` sweeps its
+expired records on its own (at most every minute, or every retention period)
+and has `sweep()`.
 
 **Retention.** After `retentionSeconds` an executed key is forgotten and a
 retry with it runs again: keep it longer than any retry an agent may make.
 `PostgresIdempotencyStore.sweep()` deletes expired rows; Redis expires them on
 its own. Stored results contain whatever the service returned, personal data
 included; `maxReplayBytes` (guard and gateway, default 64 KiB, `0` for none)
-bounds them, and a store refuses results above 256 KiB.
+bounds them, and a store refuses results above 256 KiB (`MAX_STORED_RESULT_BYTES`):
+`guardTool` accepts at most that, the gateway at most `MAX_REPLAY_BODY_BYTES`
+(about 191 KiB, since it stores the body as base64). If a store still refuses
+a result, the attempt is recorded as executed without it.
 
 ## OpenID4VP sessions
 

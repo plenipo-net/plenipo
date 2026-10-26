@@ -582,10 +582,11 @@ end
 return 1
 `);
 
-// KEYS: record, open. ARGV: outcome (executed | not_executed), retention ms, member.
+// KEYS: record, open. ARGV: outcome (executed | not_executed), retention ms, member, attempt.
 const IDEM_RESOLVE = new Script(`
 local st = redis.call('HGET', KEYS[1], 'state')
 if st ~= 'in_progress' and st ~= 'unknown' then return 0 end
+if redis.call('HGET', KEYS[1], 'attempt') ~= ARGV[4] then return 0 end
 if ARGV[1] == 'executed' then redis.call('HSET', KEYS[1], 'state', 'executed') else redis.call('HSET', KEYS[1], 'state', 'free') end
 redis.call('HDEL', KEYS[1], 'lease')
 redis.call('PEXPIRE', KEYS[1], tonumber(ARGV[2]))
@@ -678,10 +679,11 @@ export class RedisIdempotencyStore implements IdempotencyStore {
     await IDEM_FINISH.run(this.redis, [this.rec(m), this.open], [attempt, outcome, String(this.retentionMs), m, result === undefined ? '0' : '1', result ?? '']);
   }
 
-  async resolve(key: string, outcome: 'executed' | 'not_executed'): Promise<boolean> {
+  async resolve(key: string, outcome: 'executed' | 'not_executed', attempt: string): Promise<boolean> {
     const m = this.member(key);
     if (outcome !== 'executed' && outcome !== 'not_executed') throw new RangeError('outcome must be executed or not_executed');
-    const r = await IDEM_RESOLVE.run(this.redis, [this.rec(m), this.open], [outcome, String(this.retentionMs), m]);
+    if (!isAttemptId(attempt)) throw new RangeError('resolve needs the attempt that holds the key');
+    const r = await IDEM_RESOLVE.run(this.redis, [this.rec(m), this.open], [outcome, String(this.retentionMs), m, attempt]);
     return Number(r) === 1;
   }
 

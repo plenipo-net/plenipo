@@ -235,25 +235,29 @@ describe('MCP bridge restarted after a payment with an unknown outcome', () => {
     const pay = { payee: 'lumen-energia.example', amount_cents: 6230, reference: 'Lumen 2026-09' };
     const crashed = await run(c, 'transfer', pay);
     expect(crashed.isError).toBe(true);
-    const saved = JSON.parse(readFileSync(path, 'utf8'));
-    expect(saved.retry).toMatchObject({ tool: 'transfer' });
-    const key = saved.retry.idem as string;
+    const openKeys = () => Object.values(JSON.parse(readFileSync(path, 'utf8')).open ?? {}).map((v) => (v as { idem: string }).idem);
+    expect(openKeys()).toHaveLength(1);
+    const key = openKeys()[0];
 
     // The host restarts: a new bridge process on the same state file.
     await c.close();
     c = await start();
     const retry = await run(c, 'transfer', pay);
     expect(text(retry)).toMatch(/^plenipo: DENY IDEMPOTENCY_UNRESOLVED/);
-    expect(JSON.parse(readFileSync(path, 'utf8')).retry.idem).toBe(key);
+    expect(openKeys()).toEqual([key]);
     expect(text(await run(c, 'explain_last_decision'))).toMatch(/does not know yet/);
 
     // The bank reconciles: the debit is in its books.
-    const open = (await (await fetch(`${sb.urls.bank}/api/idempotency`)).json()) as { unresolved: Array<{ key: string }> };
+    const open = (await (await fetch(`${sb.urls.bank}/api/idempotency`)).json()) as { unresolved: Array<{ key: string; attempt: string }> };
     for (const r of open.unresolved) {
-      await fetch(`${sb.urls.bank}/admin/idempotency/${encodeURIComponent(r.key)}/resolve`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ outcome: 'executed' }) });
+      await fetch(`${sb.urls.bank}/admin/idempotency/${encodeURIComponent(r.key)}/resolve`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ outcome: 'executed', attempt: r.attempt }),
+      });
     }
     expect(text(await run(c, 'transfer', pay))).toMatch(/^plenipo: DENY ALREADY_EXECUTED/);
-    expect(JSON.parse(readFileSync(path, 'utf8')).retry).toBeUndefined();
+    expect(openKeys()).toEqual([]);
     const after = Number((await run(c, 'get_balance')).structuredContent!.balance_cents);
     expect(before - after).toBe(6230);
 

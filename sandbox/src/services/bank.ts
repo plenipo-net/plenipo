@@ -614,13 +614,20 @@ export async function startBank(opts: BankOptions): Promise<BankService> {
   // ---- Idempotency keys whose payment has an unknown outcome ----
   router.get('/api/idempotency', async (_req, res) => {
     const open = await stores.idempotency.unresolved({ limit: 100 });
-    sendJson(res, 200, { unresolved: open.map((r) => ({ key: r.key, state: r.state, reservation: r.reservation ?? null })) });
+    sendJson(res, 200, { unresolved: open.map((r) => ({ key: r.key, attempt: r.attempt, state: r.state, reservation: r.reservation ?? null })) });
   });
   router.post('/admin/idempotency/:key/resolve', async (req, res) => {
     checkAdmin(req, opts.adminToken);
     const body = await readFields(req);
     if (body.outcome !== 'executed' && body.outcome !== 'not_executed') throw new HttpError(400, 'outcome must be executed or not_executed');
-    const changed = await stores.idempotency.resolve(req.params.key, body.outcome);
+    // The attempt listed by /api/idempotency: an outcome learned about it never settles a newer attempt.
+    if (typeof body.attempt !== 'string') throw new HttpError(400, 'attempt required, as listed by /api/idempotency');
+    let changed: boolean;
+    try {
+      changed = await stores.idempotency.resolve(req.params.key, body.outcome, body.attempt);
+    } catch {
+      throw new HttpError(400, 'invalid key or attempt');
+    }
     events.append('idempotency_resolved', { key: req.params.key, outcome: body.outcome, changed });
     sendJson(res, 200, { changed });
   });

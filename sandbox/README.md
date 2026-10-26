@@ -153,9 +153,11 @@ Its state (agent key, approved chain, a request waiting for approval) lives in a
 it left off. The bank marks `transfer` as idempotent: the bridge gives each payment an idempotency key and
 writes it to the state file before the call goes out. When the bank does not answer, or Claude restarts
 mid-call, calling `transfer` again with the same arguments reuses the key, so the bank answers instead of
-paying twice; once a payment's outcome is known, the same arguments are a new payment. The bank lists
+paying twice; once the bank's answer settles a payment, the same arguments are a new payment. The bank lists
 payments with an unknown outcome at `GET /api/idempotency` and settles them with
-`POST /admin/idempotency/<key>/resolve` (`{"outcome": "executed" | "not_executed"}`).
+`POST /admin/idempotency/<key>/resolve` (`{"outcome": "executed" | "not_executed", "attempt": "<as listed>"}`).
+The bridge keeps every call whose outcome is still open, so paying another bill in between does not lose
+the key of the one that went unanswered.
 
 In Claude Desktop (Settings, Developer, Edit Config) add an entry with absolute paths, since Claude
 Desktop does not start servers from your shell:
