@@ -39,19 +39,27 @@ export interface BridgeState {
   retry?: { tool: string; args_hash: string; idem: string; mandate_id: string; at: string };
 }
 
-/** Open calls are kept this long at most (the bank forgets executed keys after a day) and this many at most. */
-const OPEN_CALL_MAX_AGE_MS = 24 * 3600_000;
+/**
+ * Open calls are kept this long at most, and this many at most. An open call is one whose outcome the bridge
+ * never learned; the bank keeps such a key blocked until someone reconciles it, so the bridge keeps it long.
+ */
+const OPEN_CALL_MAX_AGE_MS = 30 * 24 * 3600_000;
 const OPEN_CALL_MAX = 200;
 
 function openCallKey(mandateId: string, tool: string, argsHashValue: string): string {
   return `${mandateId}|${tool}|${argsHashValue}`;
 }
 
-/** The open calls of a state, the 0.5.0 draft slot folded in, without entries too old or too many. */
-function openCalls(state: BridgeState): Record<string, { idem: string; at: string }> {
+/**
+ * The open calls of a state, without entries too old or too many. The single slot of the 0.5.0 drafts
+ * (`retry`, hashed as `argsHash({ tool, args })`) is folded in under the key of the call it matches.
+ */
+function openCalls(state: BridgeState, call?: { mandateId: string; tool: string; args: Record<string, unknown> }): Record<string, { idem: string; at: string }> {
   const open = { ...(state.open ?? {}) };
   const r = state.retry;
-  if (r) open[openCallKey(r.mandate_id, r.tool, r.args_hash)] ??= { idem: r.idem, at: r.at };
+  if (r && call && r.mandate_id === call.mandateId && r.tool === call.tool && r.args_hash === argsHash({ tool: call.tool, args: call.args })) {
+    open[openCallKey(call.mandateId, call.tool, argsHash(call.args))] ??= { idem: r.idem, at: r.at };
+  }
   const now = Date.now();
   const kept = Object.entries(open)
     .filter(([, v]) => now - Date.parse(v.at) < OPEN_CALL_MAX_AGE_MS)
@@ -182,12 +190,52 @@ export class BridgeCore {
   private tools?: MirroredTool[];
   private readonly log: (line: string) => void;
   private store: BridgeStateStore;
+  /** Every state write goes through this chain: MCP clients call tools in parallel. */
+  private queue: Promise<unknown> = Promise.resolve();
   /** The hosted demo code of this journey, once a mandate was requested or a code adopted. */
   demoCode?: string;
 
   constructor(readonly config: BridgeConfig) {
     this.log = config.log ?? (() => {});
     this.store = config.store;
+  }
+
+  /** Runs `fn` after every state write queued before it. */
+  private serial<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.queue.then(fn, fn);
+    this.queue = run.catch(() => undefined);
+    return run;
+  }
+
+  /**
+   * Saves a state loaded earlier. The open calls are not taken from it: they change only through
+   * `updateOpen`, and a stale copy must never drop one written in the meantime by a parallel call.
+   */
+  private saveState(state: BridgeState): Promise<void> {
+    return this.serial(async () => {
+      const current = await this.store.load();
+      const next: BridgeState = { ...state };
+      delete next.open;
+      delete next.retry;
+      if (current.open) next.open = current.open;
+      if (current.retry) next.retry = current.retry;
+      await this.store.save(next);
+    });
+  }
+
+  /** Changes the open calls (and only them) in the latest state, atomically with respect to other writes. */
+  private updateOpen<T>(fn: (open: Record<string, { idem: string; at: string }>, state: BridgeState) => T, call?: { mandateId: string; tool: string; args: Record<string, unknown> }): Promise<T> {
+    return this.serial(async () => {
+      const current = await this.store.load();
+      const open = openCalls(current, call);
+      const result = fn(open, current);
+      if (call && current.retry?.mandate_id === call.mandateId && current.retry.tool === call.tool && current.retry.args_hash === argsHash({ tool: call.tool, args: call.args })) {
+        delete current.retry;
+      }
+      current.open = open;
+      await this.store.save(current);
+      return result;
+    });
   }
 
   /** The line that tells the person where to watch, for a hosted demo with a code. */
@@ -235,7 +283,7 @@ export class BridgeCore {
     const { privateKey } = await generateKeyPair('ES256', { extractable: true });
     const privateJwk = await exportJWK(privateKey);
     state.agent = { privateJwk, publicJwk: { kty: 'EC', crv: 'P-256', x: privateJwk.x, y: privateJwk.y } };
-    await this.store.save(state);
+    await this.saveState(state);
     this.log('generated a new agent key');
     return state.agent;
   }
@@ -280,7 +328,7 @@ export class BridgeCore {
       ...(input.emandate ? { transaction_data_type: 'emandate' } : {}),
     });
     state.pending = { requestId: req.request_id, mandateId: req.mandate_id, walletUrl: req.wallet_url, authorizationUrl: req.authorization_url, createdAt: new Date().toISOString() };
-    await this.store.save(state);
+    await this.saveState(state);
     await this.note('note', { text: `Claude asked for a mandate: ${input.purpose}`, request_id: req.request_id, mandate_id: req.mandate_id });
     const link = req.wallet_url ?? req.authorization_url;
     return {
@@ -332,7 +380,7 @@ export class BridgeCore {
           : await this.http<MandateView>('GET', `/api/mandates/${encodeURIComponent(state.pending.mandateId)}`).catch(() => undefined);
       if (!m || (r.state !== 'active' && m.state !== 'active')) {
         delete state.pending;
-        await this.store.save(state);
+        await this.saveState(state);
         return { isError: true, text: `The mandate request ended as ${r.state}${r.error ? ` (${r.error})` : ''}. No mandate: you cannot act at the bank.`, data: { state: r.state } };
       }
       // The bridge signs under this mandate only if it names the bridge's own key.
@@ -341,7 +389,7 @@ export class BridgeCore {
       }
       state.mandate = { id: m.id, chain: m.chain, mandate: m.mandate, approvedAt: new Date().toISOString() };
       delete state.pending;
-      await this.store.save(state);
+      await this.saveState(state);
       await this.note('note', { text: 'The person approved the mandate; Claude can act at the bank', mandate_id: m.id });
     }
     if (!state.mandate) return { isError: true, text: 'No mandate yet. Call request_mandate first.', data: { state: 'none' } };
@@ -422,11 +470,12 @@ export class BridgeCore {
     const tool = (await this.bankTools()).find((t) => t.name === name);
     if (!tool) return { isError: true, text: `The bank has no tool ${name}, or the bank is not reachable.` };
     const state = await this.store.load();
-    const record = async (last: Omit<LastDecision, 'at' | 'tool'>) => {
-      const s = await this.store.load();
-      s.last = { at: new Date().toISOString(), tool: name, ...last };
-      await this.store.save(s);
-    };
+    const record = (last: Omit<LastDecision, 'at' | 'tool'>) =>
+      this.serial(async () => {
+        const s = await this.store.load();
+        s.last = { at: new Date().toISOString(), tool: name, ...last };
+        await this.store.save(s);
+      });
     if (!state.mandate || !state.agent) {
       const text = state.pending
         ? 'The mandate is not approved yet. Ask the person to approve it in the wallet, then call mandate_status.'
@@ -443,13 +492,16 @@ export class BridgeCore {
     let idem: string | undefined;
     let openKey: string | undefined;
     if (tool.binding.idempotent) {
-      openKey = openCallKey(state.mandate.id, name, argsHash(args));
-      const open = openCalls(state);
-      idem = open[openKey]?.idem ?? newIdempotencyKey();
-      open[openKey] = { idem, at: open[openKey]?.at ?? new Date().toISOString() };
-      state.open = open;
-      delete state.retry;
-      await this.store.save(state);
+      const k = openCallKey(state.mandate.id, name, argsHash(args));
+      openKey = k;
+      idem = await this.updateOpen(
+        (open) => {
+          const key = open[k]?.idem ?? newIdempotencyKey();
+          open[k] = { idem: key, at: open[k]?.at ?? new Date().toISOString() };
+          return key;
+        },
+        { mandateId: state.mandate.id, tool: name, args },
+      );
     }
     const invocation = await createInvocation(key as CryptoKey, {
       mandateId: state.mandate.id,
@@ -471,12 +523,11 @@ export class BridgeCore {
     };
     /** Forgets the open call once the bank's answer settles it; the next identical call is a new one. */
     const settled = async () => {
-      if (!idem || !openKey) return;
-      const s = await this.store.load();
-      if (s.open?.[openKey]?.idem === idem) {
-        delete s.open[openKey];
-        await this.store.save(s);
-      }
+      const k = openKey;
+      if (!idem || !k) return;
+      await this.updateOpen((open) => {
+        if (open[k]?.idem === idem) delete open[k];
+      });
     };
     await this.note('tool_call', { tool: name, args, mandate_id: state.mandate.id });
     let text: string;

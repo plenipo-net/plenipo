@@ -546,7 +546,15 @@ async function captureResponse(response: Response, max: number): Promise<{ respo
   const replayOf = (body: Uint8Array): ReplayResponse => ({ status: response.status, ...(contentType ? { contentType } : {}), body });
   if (!response.body) return { response, replay: replayOf(new Uint8Array(0)) };
   if (Number(response.headers.get('content-length') ?? '0') > max) return { response };
-  const reader = response.body.getReader();
+  // A body someone already read or holds a reader on cannot be captured: pass the response on untouched,
+  // and the attempt is still settled (executed, without a stored response).
+  if (response.bodyUsed || response.body.locked) return { response };
+  let reader: ReadableStreamDefaultReader<Uint8Array>;
+  try {
+    reader = response.body.getReader();
+  } catch {
+    return { response };
+  }
   const chunks: Uint8Array[] = [];
   let size = 0;
   let pending: Promise<ReadableStreamReadResult<Uint8Array>> | undefined;
