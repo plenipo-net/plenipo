@@ -29,8 +29,7 @@ Added
   with the outcome, as it settles the reservation.
 - `InMemoryIdempotencyStore`, `PostgresIdempotencyStore`, `RedisIdempotencyStore`, with `claim`, `attach`,
   `finish`, `resolve` (on the attempt that holds the key), `get`, `unresolved` (and `sweep` on Postgres
-  and in memory). A key held by an attempt of unknown
-  outcome follows the reconciliation of its reservation on Postgres and Redis ledgers: committed means
+  and in memory). A key held by an attempt of unknown outcome follows the reconciliation of its reservation on Postgres and Redis ledgers: committed means
   executed, released means free again.
 - `guardTool` and the HTTP gateway end attempts with the same rule as reservations and keep results
   for replays (`maxReplayBytes`, default 64 KiB). A retry of an executed call gets the stored tool result
@@ -56,26 +55,6 @@ Sandbox
   it when the same call is repeated after an unknown outcome, also after a restart of the host.
 - Scenarios `idempotent-retry` and `retry-after-crash` (the second is not run on request in a public
   sandbox, since it arms a bank-wide failure).
-
-Security review
-- An independent review of this release (AI review agent) found two serious problems and several minor
-  ones, all fixed before the release with regression tests (`test/review-0.5.test.ts`,
-  `sandbox/test/bridge-retry.e2e.ts`):
-  - `resolve` acted on whichever attempt held a key, so two concurrent retries following the same
-    released reservation could both run, and an operator acting on an old listing could free a newer
-    attempt. `resolve(key, outcome, attempt)` is now compare-and-set on the attempt.
-  - The gateway read every committed response through a tee to keep it for replays; a body larger than
-    `maxReplayBytes` without `Content-Length`, or a stream, made `handle()` hang, with or without
-    idempotency. It now reads only keyed requests, once, and rebuilds the response for the client.
-  - The bridge kept one open call, so paying another bill, or a denial before the bank looked at the key,
-    lost the key of an unanswered payment. It now keeps every open call until the bank settles it.
-  - `maxReplayBytes` is bounded by what a store accepts, and an attempt is recorded as executed even when
-    the store refuses its result.
-  - Every idempotency refusal spends the retry's nonce, so a copy of it cannot read the stored result
-    later.
-  - `InMemoryIdempotencyStore` sweeps expired records on its own.
-  - Documented: the bound of `maxStatusAgeSeconds` holds as far as HTTP caches honour the request, and
-    with keys, the action and arguments must determine the operation.
 - First run with a real wallet: walt.id Wallet API 2 approved a `plenipo_mandate` over OpenID4VP and
   the sandbox bank enforced it (`sandbox/level2/README.md`). The same run passed with a TS12 e-mandate
   bound to the PID (`WALTID_EMANDATE=1`).
@@ -98,6 +77,31 @@ Security review
   configuration (`sandbox/deploy/fly.toml`), a daily clean restart and a play-money refill for a public
   instance. Bank payment and card events now carry the mandate id. When `SANDBOX_ADMIN_TOKEN` is set,
   posting dashboard events requires it.
+
+Security review
+- An independent review of this release (AI review agent) found two serious problems and several minor
+  ones, all fixed before the release with regression tests (`test/review-0.5.test.ts`,
+  `sandbox/test/bridge-retry.e2e.ts`):
+  - `resolve` acted on whichever attempt held a key, so two concurrent retries following the same
+    released reservation could both run, and an operator acting on an old listing could free a newer
+    attempt. `resolve(key, outcome, attempt)` is now compare-and-set on the attempt.
+  - The gateway read every committed response through a tee to keep it for replays; a body larger than
+    `maxReplayBytes` without `Content-Length`, or a stream, made `handle()` hang, with or without
+    idempotency. It now reads only keyed requests, once, and rebuilds the response for the client.
+  - The bridge kept one open call, so paying another bill, or a denial before the bank looked at the key,
+    lost the key of an unanswered payment. It now keeps every open call until the bank settles it.
+  - `maxReplayBytes` is bounded by what a store accepts, and an attempt is recorded as executed even when
+    the store refuses its result.
+  - Every idempotency refusal spends the retry's nonce, so a copy of it cannot read the stored result
+    later.
+  - `InMemoryIdempotencyStore` sweeps expired records on its own.
+  - Documented: the bound of `maxStatusAgeSeconds` holds as far as HTTP caches honour the request, and
+    with keys, the action and arguments must determine the operation.
+- A second round on the fixes confirmed them and found three smaller problems, also fixed
+  (`test/review-0.5-round2.test.ts`, `sandbox/test/review-round2.e2e.ts`): parallel tool calls in the
+  bridge could overwrite each other's open calls (state writes are now serialised), the 0.5.0-draft
+  `retry` slot was migrated under a key no call computed, and a downstream body that was already read
+  made the gateway's `handle()` reject instead of passing the response on.
 
 ## 0.4.1 (25 October 2026)
 
