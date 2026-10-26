@@ -108,6 +108,11 @@ export interface InvocationPayload {
   args_hash?: string;
   /** Hash of the mandate chain presented with the invocation (see `chainHash`). Required by the verifier. */
   chain_hash: string;
+  /**
+   * Idempotency key: the same value in every attempt of one intention, so that at most one attempt runs
+   * (see `src/idempotency.ts`). Requires `args_hash`.
+   */
+  idem?: string;
 }
 
 export interface TrustedIssuer {
@@ -154,6 +159,14 @@ export type DenyCode =
   | 'ROLE_EXCEEDED'
   /** A status list or revocation source could not be fetched or verified. Still a denial; a retry may succeed. */
   | 'STATUS_UNAVAILABLE'
+  /** The idempotency key was already used for a different request. */
+  | 'IDEMPOTENCY_CONFLICT'
+  /** An attempt with this idempotency key is still running; a retry later may get its result. */
+  | 'IDEMPOTENCY_IN_PROGRESS'
+  /** An attempt with this idempotency key ended with an unknown outcome; the service must reconcile it first. */
+  | 'IDEMPOTENCY_UNRESOLVED'
+  /** An attempt with this idempotency key already executed; the decision may carry its stored result. */
+  | 'ALREADY_EXECUTED'
   /** An unexpected error (a store or registry that threw). Details only in `detail`. */
   | 'INTERNAL';
 
@@ -189,6 +202,12 @@ export type Decision =
        */
       reservation?: string;
       /**
+       * Present when the invocation carries an idempotency key: the attempt that now holds it. The caller
+       * must end it on the idempotency store with the outcome of the action (`finish`), as it settles the
+       * reservation; an attempt never ended blocks the key until reconciled.
+       */
+      idempotency?: { key: string; attempt: string };
+      /**
        * RFC 7638 SHA-256 thumbprint of the PID holder key (`cnf.jwk`). Distinguishes people with the same
        * name; a wallet that uses a fresh key per PID copy yields a different value per copy.
        */
@@ -203,6 +222,8 @@ export type Decision =
       /** Internal detail for logs (network errors, library messages). The MCP guard never returns it. */
       detail?: string;
       path: PathEntry[];
+      /** With `ALREADY_EXECUTED`: what the service stored when the first attempt ran, if it kept anything. */
+      replay?: { result?: string };
     };
 
 /** Principal of a Decision whose root mandate was given on behalf of a legal person. */

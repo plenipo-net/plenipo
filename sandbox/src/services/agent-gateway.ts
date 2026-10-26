@@ -66,8 +66,8 @@ export interface AgentGatewayOptions {
   };
 }
 
-/** Scenarios that change state every session shares (the bank clock, a person's PID): not run on request. */
-const PRIVATE_SCENARIOS = new Set(['expired', 'pid-revoked']);
+/** Scenarios that change state every session shares (the bank clock, a person's PID, the next transfer): not run on request. */
+const PRIVATE_SCENARIOS = new Set(['expired', 'pid-revoked', 'retry-after-crash']);
 export const PUBLIC_SCENARIOS = SCENARIOS.filter((s) => !PRIVATE_SCENARIOS.has(s.id));
 
 export interface AgentGatewayService extends RunningServer {

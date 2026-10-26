@@ -172,6 +172,8 @@ export interface RootOptions extends TrustConfig {
   pidStatusTrust?: TrustConfig;
   statusFetcher?: StatusFetcher;
   statusCache?: StatusListCache;
+  /** Maximum age of a cached status list for this verification; see `VerifyOptions.maxStatusAgeSeconds`. */
+  maxStatusAgeSeconds?: number;
   /** How TS12 e-mandate roots are accepted. */
   emandate?: EmandateVerifyOptions;
   /** How representation attestations are accepted; required for mandates on behalf of a legal person. */
@@ -581,7 +583,7 @@ export async function checkAttestationCertificates(c: DeferredCertificateCheck, 
  */
 export async function checkAttestationStatus(
   d: DeferredStatus,
-  opts: { now: number; statusFetcher?: StatusFetcher; statusCache?: StatusListCache },
+  opts: { now: number; statusFetcher?: StatusFetcher; statusCache?: StatusListCache; maxStatusAgeSeconds?: number },
 ): Promise<void> {
   const allowedOrigins = d.trust.statusOrigins ?? [httpsOrigin(d.issuer)].filter((o): o is string => !!o);
   let status: number;
@@ -593,6 +595,7 @@ export async function checkAttestationStatus(
       fetcher: opts.statusFetcher,
       now: opts.now,
       cache: opts.statusCache,
+      ...(opts.maxStatusAgeSeconds !== undefined ? { maxAgeSeconds: opts.maxStatusAgeSeconds } : {}),
     });
   } catch (e) {
     throw new RootError(e instanceof StatusUnavailableError ? 'STATUS_UNAVAILABLE' : 'ATTESTATION_REVOKED', `${d.label} status could not be verified`, (e as Error).message);
@@ -620,7 +623,13 @@ export async function checkPidStatus(ref: StatusReference, pidIss: string, opts:
     : { trust: opts as TrustConfig, signer: pidIss, allowedOrigins: [httpsOrigin(pidIss)].filter((o): o is string => !!o) };
   let status: number;
   try {
-    status = await checkStatus(ref, { ...check, fetcher: opts.statusFetcher, now: opts.now, cache: opts.statusCache });
+    status = await checkStatus(ref, {
+      ...check,
+      fetcher: opts.statusFetcher,
+      now: opts.now,
+      cache: opts.statusCache,
+      ...(opts.maxStatusAgeSeconds !== undefined ? { maxAgeSeconds: opts.maxStatusAgeSeconds } : {}),
+    });
   } catch (e) {
     throw new RootError(e instanceof StatusUnavailableError ? 'STATUS_UNAVAILABLE' : 'PID_REVOKED', 'PID status could not be verified', (e as Error).message);
   }

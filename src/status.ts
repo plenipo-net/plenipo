@@ -18,15 +18,23 @@ export interface StatusReference {
 /**
  * Fetches a status list token. The default fetcher uses HTTPS only, refuses redirects, stops after
  * 5 seconds and reads at most 1 MB. A custom fetcher must keep the same guarantees.
+ *
+ * `maxAgeSeconds` is set when the caller needs a list no older than that (see `VerifyOptions.maxStatusAgeSeconds`):
+ * the default fetcher sends it as `Cache-Control: max-age`, so HTTP caches on the way revalidate older copies.
  */
-export type StatusFetcher = (uri: string) => Promise<string>;
+export type StatusFetcher = (uri: string, opts?: { maxAgeSeconds?: number }) => Promise<string>;
 
 const MAX_TOKEN_BYTES = 1_000_000;
 
-export const defaultStatusFetcher: StatusFetcher = async (uri) => {
+export const defaultStatusFetcher: StatusFetcher = async (uri, opts) => {
   if (new URL(uri).protocol !== 'https:') throw new Error('status lists are fetched over https only');
+  const maxAge = opts?.maxAgeSeconds;
   const res = await fetch(uri, {
-    headers: { accept: 'application/statuslist+jwt' },
+    headers: {
+      accept: 'application/statuslist+jwt',
+      // A request directive (RFC 9111): caches between here and the origin must not answer with an older copy.
+      ...(typeof maxAge === 'number' && Number.isFinite(maxAge) && maxAge >= 0 ? { 'cache-control': `max-age=${Math.floor(maxAge)}` } : {}),
+    },
     redirect: 'error',
     signal: AbortSignal.timeout(5_000),
   });
@@ -50,6 +58,12 @@ export const defaultStatusFetcher: StatusFetcher = async (uri) => {
   return Buffer.concat(chunks).toString('utf8').trim();
 };
 
+/**
+ * Default `ttl` of the status lists this library publishes, in seconds. Verifiers and HTTP caches may keep a
+ * list that long, so it is how long a revocation can go unnoticed; it matches the default `StatusListCache`.
+ */
+export const DEFAULT_STATUS_TTL_SECONDS = 60;
+
 export const STATUS_VALID = 0;
 export const STATUS_INVALID = 1;
 export const STATUS_SUSPENDED = 2;
@@ -70,6 +84,11 @@ export interface StatusCheckOptions {
   now: number;
   /** Optional cache shared across verifications. */
   cache?: StatusListCache;
+  /**
+   * When set, a cached list obtained more than this many seconds ago is not used, and the fetcher is asked
+   * for a copy no older than that. `0` always fetches.
+   */
+  maxAgeSeconds?: number;
   /**
    * Largest status list accepted once inflated, in bytes. Default `DEFAULT_MAX_STATUS_LIST_BYTES` (1 MiB:
    * 4 194 304 entries at 2 bits, 8 388 608 at 1 bit). A token is at most 1 MB, but DEFLATE compresses a
@@ -127,14 +146,21 @@ export function readStatus(list: DecodedStatusList, idx: number): number {
  * accepted under one trust configuration is never served to a check that requires another.
  */
 export class StatusListCache {
-  private readonly entries = new Map<string, { list: DecodedStatusList; until: number }>();
+  private readonly entries = new Map<string, { list: DecodedStatusList; until: number; fetchedAt?: number }>();
   constructor(private readonly maxAgeSeconds = 60) {}
-  get(key: string, now: number): DecodedStatusList | undefined {
+  /**
+   * The cached list, unless it expired or, with `maxAgeSeconds`, was obtained more than that many seconds
+   * before `now`. This is what bounds how long a revocation can go unnoticed.
+   */
+  get(key: string, now: number, maxAgeSeconds?: number): DecodedStatusList | undefined {
     const e = this.entries.get(key);
-    return e && e.until > now ? e.list : undefined;
+    if (!e || e.until <= now) return undefined;
+    // `0` means "obtained for this check": never served from the cache, whatever the clock resolution.
+    if (maxAgeSeconds !== undefined && (maxAgeSeconds === 0 || e.fetchedAt === undefined || now - e.fetchedAt > maxAgeSeconds)) return undefined;
+    return e.list;
   }
-  set(key: string, list: DecodedStatusList, until: number): void {
-    this.entries.set(key, { list, until });
+  set(key: string, list: DecodedStatusList, until: number, fetchedAt?: number): void {
+    this.entries.set(key, { list, until, ...(fetchedAt !== undefined ? { fetchedAt } : {}) });
   }
   get maxAge(): number {
     return this.maxAgeSeconds;
@@ -190,11 +216,16 @@ export async function checkStatus(ref: StatusReference, opts: StatusCheckOptions
   const maxBytes = opts.maxListBytes ?? DEFAULT_MAX_STATUS_LIST_BYTES;
   // The bound is part of the key: a list accepted under a larger bound is not served to a stricter check.
   const key = JSON.stringify([trustId(opts.trust), opts.signer, uri, maxBytes]);
-  let list = opts.cache?.get(key, opts.now);
+  const maxAge = opts.maxAgeSeconds;
+  if (maxAge !== undefined && (typeof maxAge !== 'number' || !Number.isFinite(maxAge) || maxAge < 0)) {
+    throw new Error('maxAgeSeconds must be a non-negative number');
+  }
+  let list = opts.cache?.get(key, opts.now, maxAge);
   if (!list) {
     let token: string;
     try {
-      token = await (opts.fetcher ?? defaultStatusFetcher)(uri);
+      const fetcher = opts.fetcher ?? defaultStatusFetcher;
+      token = await (maxAge !== undefined ? fetcher(uri, { maxAgeSeconds: maxAge }) : fetcher(uri));
     } catch (e) {
       throw new StatusUnavailableError((e as Error)?.message ?? String(e));
     }
@@ -211,7 +242,7 @@ export async function checkStatus(ref: StatusReference, opts: StatusCheckOptions
     if (opts.cache) {
       const ttl = typeof payload.ttl === 'number' && payload.ttl >= 0 ? payload.ttl : opts.cache.maxAge;
       const until = Math.min(opts.now + opts.cache.maxAge, opts.now + ttl, Number(payload.exp));
-      opts.cache.set(key, list, until);
+      opts.cache.set(key, list, until, opts.now);
     }
   }
   return readStatus(list, idx);
@@ -237,7 +268,7 @@ export class StatusListPublisher {
       x5c?: string[];
       /** Token lifetime in seconds. Default 1 hour. */
       lifetimeSeconds?: number;
-      /** Hint for verifier caches, in seconds. Default 300. */
+      /** Hint for verifier and HTTP caches, in seconds: how long a revocation may go unnoticed. Default 60. */
       ttlSeconds?: number;
     },
   ) {
@@ -290,7 +321,7 @@ export class StatusListPublisher {
         sub: this.opts.uri,
         iat: now,
         exp: now + (this.opts.lifetimeSeconds ?? 3600),
-        ttl: this.opts.ttlSeconds ?? 300,
+        ttl: this.opts.ttlSeconds ?? DEFAULT_STATUS_TTL_SECONDS,
         ...(this.opts.iss ? { iss: this.opts.iss } : {}),
       },
       { alg: 'ES256', typ: 'statuslist+jwt', ...(this.opts.x5c ? { x5c: this.opts.x5c } : {}) } as any,

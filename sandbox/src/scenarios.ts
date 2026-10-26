@@ -2,7 +2,7 @@
  * Named, deterministic scenarios. Each one plays a person, an agent platform and one or more agents
  * against the running services over HTTP, and checks the bank's answers against what Plenipo must do.
  */
-import { decodeMandateTransactionData, encodeMandateTransactionData } from 'plenipo';
+import { decodeMandateTransactionData, encodeMandateTransactionData, newIdempotencyKey } from 'plenipo';
 import type { CallOutcome, SandboxAgentClient } from './agent/client.js';
 import { ATTACKER_HOST } from './catalog.js';
 
@@ -255,6 +255,47 @@ export const SCENARIOS: Scenario[] = [
       const [ra, rb] = await Promise.all([c.client.send(a), c.client.send(b)]);
       const outcomes = [ra, rb].map(describe).sort();
       c.check('exactly one of the two passes', outcomes[0] === 'ALLOW' && outcomes[1] === 'DENY LIMIT_TOTAL', 'ALLOW + DENY LIMIT_TOTAL', outcomes.join(' + '));
+    },
+  },
+  {
+    id: 'idempotent-retry',
+    title: 'The answer to a payment is lost, and the agent retries',
+    expected: 'The agent pays a bill but never sees the answer, so it sends the same call again with the same idempotency key. The bank returns the stored result of the first payment and pays nothing a second time; a new key is a new payment.',
+    async run(c) {
+      const m = await c.client.obtainMandate({ agentName: 'Bill assistant', person: 'maria', preset: UTIL });
+      const before = await c.client.restBalance(m, c.audiences.rest);
+      const key = newIdempotencyKey();
+      const args = { payee: 'acquaviva.example', amount_cents: 4120, reference: 'AcquaViva bill Q3 2026' };
+      const first = c.expect('pay AcquaViva 41.20 (the answer is lost on the way back)', await c.client.callTool(m, 'transfer', args, { idempotencyKey: key }), 'ALLOW');
+      const retry = c.expect('the same call again, same key', await c.client.callTool(m, 'transfer', args, { idempotencyKey: key }), 'ALLOW');
+      c.check('the retry is the stored answer of the first payment', retry.replay === true && retry.data?.transaction_id === first.data?.transaction_id, `replay of ${String(first.data?.transaction_id)}`, `${retry.replay ? 'replay' : 'new call'} ${String(retry.data?.transaction_id)}`);
+      const after = await c.client.restBalance(m, c.audiences.rest);
+      const diff = Number(before.body.balance_cents) - Number(after.body.balance_cents);
+      c.check('paid once', diff === 4120, '4120 cents', `${diff} cents`);
+      c.expect('the same key for a different amount', await c.client.callTool(m, 'transfer', { ...args, amount_cents: 4121 }, { idempotencyKey: key }), 'IDEMPOTENCY_CONFLICT');
+    },
+  },
+  {
+    id: 'retry-after-crash',
+    title: 'The bank fails after the money left, and the agent retries',
+    expected: 'Core banking times out after debiting the account. The retry with the same idempotency key is refused with IDEMPOTENCY_UNRESOLVED instead of paying again; once the bank reconciles the payment as executed, the retry is answered with ALREADY_EXECUTED. The account was debited once.',
+    async run(c) {
+      const m = await c.client.obtainMandate({ agentName: 'Bill assistant', person: 'luca', preset: UTIL });
+      const before = await c.client.restBalance(m, c.audiences.rest);
+      await c.admin(`${c.urls.bank}/admin/fail-next-transfer`);
+      const key = newIdempotencyKey();
+      const args = { payee: 'lumen-energia.example', amount_cents: 6230, reference: 'Lumen bill 2026-09' };
+      const crashed = await c.client.callTool(m, 'transfer', args, { idempotencyKey: key });
+      c.check('the bank does not answer: outcome unknown', crashed.decision === 'ALLOW' && crashed.isError && /did not answer in time/.test(crashed.text), 'ALLOW, then a timeout', describe(crashed));
+      c.expect('retry with the same key', await c.client.callTool(m, 'transfer', args, { idempotencyKey: key }), 'IDEMPOTENCY_UNRESOLVED');
+      const open = (await (await fetch(`${c.urls.bank}/api/idempotency`)).json()) as { unresolved: Array<{ key: string; attempt: string }> };
+      c.check('the bank lists the payment for reconciliation', open.unresolved.length >= 1, 'at least one unresolved key', `${open.unresolved.length}`);
+      // The bank finds the debit in its books and records it as executed.
+      for (const r of open.unresolved) await c.admin(`${c.urls.bank}/admin/idempotency/${encodeURIComponent(r.key)}/resolve`, { outcome: 'executed', attempt: r.attempt });
+      c.expect('retry after the reconciliation', await c.client.callTool(m, 'transfer', args, { idempotencyKey: key }), 'ALREADY_EXECUTED');
+      const after = await c.client.restBalance(m, c.audiences.rest);
+      const diff = Number(before.body.balance_cents) - Number(after.body.balance_cents);
+      c.check('debited once', diff === 6230, '6230 cents', `${diff} cents`);
     },
   },
   {

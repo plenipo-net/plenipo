@@ -764,7 +764,7 @@ describe('error mapping', () => {
   const codes: DenyCode[] = Object.keys(DENY_PROBLEMS) as DenyCode[];
 
   it('covers every DenyCode with a stable lowercase code and a type URI', () => {
-    expect(codes).toHaveLength(33);
+    expect(codes).toHaveLength(37);
     const seen = new Set<string>();
     for (const c of codes) {
       const p = DENY_PROBLEMS[c];

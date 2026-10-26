@@ -200,3 +200,71 @@ describe('MCP bridge started before the bank', () => {
     }
   }, 30_000);
 });
+
+describe('MCP bridge restarted after a payment with an unknown outcome', () => {
+  const path = join(mkdtempSync(join(tmpdir(), 'plenipo-bridge-restart-')), 'state.json');
+  const start = async () => {
+    const c = new Client({ name: 'restart-claude', version: '1.0.0' });
+    await c.connect(
+      new StdioClientTransport({
+        command: process.execPath,
+        args: [join(import.meta.dirname, '..', 'dist', 'bridge.js')],
+        env: { PATH: process.env.PATH ?? '', PLENIPO_PLATFORM_URL: sb.urls.platform, PLENIPO_BANK_URL: sb.urls.bank, PLENIPO_DASHBOARD_URL: '', PLENIPO_BRIDGE_STATE: path },
+        stderr: 'pipe',
+      }),
+    );
+    return c;
+  };
+  const run = async (c: Client, name: string, args: Record<string, unknown> = {}) => (await c.callTool({ name, arguments: args })) as Result;
+
+  it('reuses the idempotency key after the restart, so the bank never pays twice', async () => {
+    let c = await start();
+    const req = await run(c, 'request_mandate', { payees: ['lumen-energia.example'], per_payment_eur: 100, total_eur: 300, days: 7, purpose: 'Pay the electricity bill' });
+    const d = req.structuredContent!;
+    const w = await fetch(`${sb.urls.wallet}/api/requests`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ client_id: d.client_id, request_uri: d.request_uri, person: 'luca' }),
+    });
+    const wr = (await w.json()) as { id: string };
+    await fetch(`${sb.urls.wallet}/api/requests/${wr.id}/decision`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ decision: 'approve', person: 'luca' }) });
+    expect(text(await run(c, 'mandate_status'))).toMatch(/Mandate active/);
+    const before = Number((await run(c, 'get_balance')).structuredContent!.balance_cents);
+
+    await fetch(`${sb.urls.bank}/admin/fail-next-transfer`, { method: 'POST' });
+    const pay = { payee: 'lumen-energia.example', amount_cents: 6230, reference: 'Lumen 2026-09' };
+    const crashed = await run(c, 'transfer', pay);
+    expect(crashed.isError).toBe(true);
+    const openKeys = () => Object.values(JSON.parse(readFileSync(path, 'utf8')).open ?? {}).map((v) => (v as { idem: string }).idem);
+    expect(openKeys()).toHaveLength(1);
+    const key = openKeys()[0];
+
+    // The host restarts: a new bridge process on the same state file.
+    await c.close();
+    c = await start();
+    const retry = await run(c, 'transfer', pay);
+    expect(text(retry)).toMatch(/^plenipo: DENY IDEMPOTENCY_UNRESOLVED/);
+    expect(openKeys()).toEqual([key]);
+    expect(text(await run(c, 'explain_last_decision'))).toMatch(/does not know yet/);
+
+    // The bank reconciles: the debit is in its books.
+    const open = (await (await fetch(`${sb.urls.bank}/api/idempotency`)).json()) as { unresolved: Array<{ key: string; attempt: string }> };
+    for (const r of open.unresolved) {
+      await fetch(`${sb.urls.bank}/admin/idempotency/${encodeURIComponent(r.key)}/resolve`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ outcome: 'executed', attempt: r.attempt }),
+      });
+    }
+    expect(text(await run(c, 'transfer', pay))).toMatch(/^plenipo: DENY ALREADY_EXECUTED/);
+    expect(openKeys()).toEqual([]);
+    const after = Number((await run(c, 'get_balance')).structuredContent!.balance_cents);
+    expect(before - after).toBe(6230);
+
+    // A deliberate second payment of the same amount is a new call with a new key.
+    const again = await run(c, 'transfer', pay);
+    expect(again.isError).toBeFalsy();
+    expect(Number((await run(c, 'get_balance')).structuredContent!.balance_cents)).toBe(after - 6230);
+    await c.close();
+  }, 30_000);
+});

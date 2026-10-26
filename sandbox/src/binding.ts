@@ -17,6 +17,11 @@ export interface ToolBinding {
   audience: string;
   counterparty: { arg: string } | { value: string } | null;
   amount: { arg: string; currency: string } | null;
+  /**
+   * The bank keeps idempotency keys for this tool: an agent should sign each call with an `idem` and reuse it
+   * when it retries after an unknown outcome, so that a retry never pays twice.
+   */
+  idempotent?: boolean;
 }
 
 export interface BoundCall {
@@ -45,7 +50,13 @@ export function isToolBinding(x: unknown): x is ToolBinding {
   if (typeof x !== 'object' || x === null) return false;
   const b = x as Record<string, unknown>;
   const objOrNull = (v: unknown) => v === null || (typeof v === 'object' && v !== undefined);
-  return typeof b.action === 'string' && typeof b.audience === 'string' && objOrNull(b.counterparty) && objOrNull(b.amount);
+  return (
+    typeof b.action === 'string' &&
+    typeof b.audience === 'string' &&
+    objOrNull(b.counterparty) &&
+    objOrNull(b.amount) &&
+    (b.idempotent === undefined || typeof b.idempotent === 'boolean')
+  );
 }
 
 /** The invocation fields for a bound call: absent when the tool has none. */

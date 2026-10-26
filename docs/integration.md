@@ -307,7 +307,80 @@ through `authorize` instead.
 `{ kind: 'pass', request }` or `{ kind: 'allow', decision, request, settle }`.
 Call `settle({ status })`, `settle({ error })` or `settle({ outcome:
 'commit' | 'release' | 'pending' })`; `gateway.outcomeForStatus(status)` gives
-the status rule above. A reservation never settled stays pending.
+the status rule above. A reservation never settled stays pending. Pass the
+response as second argument (`settle({ status }, response)`) to keep it for
+idempotent replays.
+
+### Idempotent retries
+
+An agent that loses the answer to a payment cannot tell whether it went
+through. With `verify.idempotency` set to an `IdempotencyStore`, it can retry
+safely: every attempt of one intention carries the same idempotency key
+(`createInvocation({ …, idempotencyKey })`, a fresh `nonce` each time), and at
+most one attempt reaches the API.
+
+```ts
+const gateway = createGateway({
+  routes,
+  verify: { ...verifyOptions, ledger, idempotency: new PostgresIdempotencyStore(pool) },
+  downstream,
+});
+```
+
+The gateway ends the attempt with the same rule as the reservation: a commit
+marks the key executed and keeps the response (status, `Content-Type` and body,
+up to `maxReplayBytes`, default 64 KiB, at most `MAX_REPLAY_BODY_BYTES`), a
+release frees the key, a pending outcome blocks it until reconciled. Only a
+committed request that carries a key is read: the gateway reads its body once,
+for at most a second, and hands the client a response rebuilt from what it read
+followed by the rest of the stream, so a large or streamed body reaches the
+client unchanged and is simply not kept. In authorize mode, pass what to keep
+as `settle({ status }, { status, contentType, body })`. A retry is then
+answered without calling the API:
+
+| The first attempt | The retry gets |
+| --- | --- |
+| executed, response kept | that response, with `Plenipo-Replay: true` |
+| executed, response not kept (too large, streamed) | 409 `already_executed` |
+| still running | 409 `idempotency_in_progress`, with `Retry-After` |
+| outcome unknown (5xx, timeout, crash) | 409 `idempotency_unresolved`, until reconciled |
+| a refusal (4xx, policy) | nothing: the key was freed, the retry runs |
+| a key reused for another body | 422 `idempotency_conflict` |
+
+A verifier without an idempotency store refuses invocations that carry a key
+(`configuration`, 500), because it could not keep the promise; tell agents
+which routes accept keys. Reconcile unknown outcomes as for reservations
+(docs/stores.md, "Idempotency keys").
+
+A key is scoped to the audience and the chain, and compared by action,
+counterparty, amount and argument hash: it does not name the route or the
+tool. Give each operation its own action, or arguments that tell it apart.
+With the default `args` of a route, method and path are part of the argument
+hash, so routes never share a key. For MCP tools, where the arguments are the
+tool's own, two tools with the same action and the same arguments would: a
+balance read and an account freeze both called with `{}` must not share
+`accounts.read`.
+
+### Revocation latency
+
+A revoked mandate stops being accepted when the verifier sees the new status
+list. With a `StatusListCache`, that happens after the cache lifetime: the
+shortest of its maximum age (60 s by default), the list `ttl` and the list
+`exp`. With shared HTTP caches in front of the status service, add the
+`Cache-Control` max-age the service sends (bounded by the `ttl`).
+
+For routes that move money, set `maxStatusAgeSeconds` on the route (or on the
+verify options of a `guardTool`): a cached list older than that is fetched
+again, and the default fetcher asks caches on the way for a copy no older
+than that (`Cache-Control: max-age=<n>`). `0` fetches the list on every
+request; reads can keep using the cache. The verifier cannot see how long an
+HTTP cache kept the copy it gets: with a CDN in front of the status service,
+make it honour request `Cache-Control` or bypass it for status lists, and a
+custom `statusFetcher` should pass the bound on.
+
+```ts
+{ method: 'POST', path: '/payments', action: 'payments.transfer', counterparty, amount, maxStatusAgeSeconds: 5 }
+```
 
 ### Express
 
@@ -470,8 +543,10 @@ return Response.json({ tppMessages: [{ category: 'ERROR', code: BG[p.code] ?? 'F
 - **Caching.** `Cache-Control: public, max-age=N` with N = min(token `ttl`,
   time to `exp`, `maxCacheSeconds`), so no shared cache keeps a list longer
   than verifiers may. An `ETag` (hash of the token) allows `If-None-Match`/304.
-  Revocation therefore takes effect within the list `ttl` (default 300 s in
-  `ManagedStatusList`); pick a ttl that matches the bank's tolerance.
+  Revocation therefore takes effect within the list `ttl` (default 60 s in
+  `ManagedStatusList` since 0.5, 300 s before); pick a ttl that matches the
+  bank's tolerance. A verifier can require a fresher list for some calls with
+  `maxStatusAgeSeconds` (see "Revocation latency" below).
 - **No open admin.** `authorize(request, op)` is required; the service refuses
   to start without it. It runs before the service reveals whether a list or
   entry exists. Return `true`, or `{ actor }` to record who acted; anything else

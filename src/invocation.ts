@@ -3,6 +3,7 @@ import { signCompactJwt, type SigningKey } from './signer.js';
 import { canonicalize, sha256 } from './encoding.js';
 import { INVOCATION_TYP, type Amount, type InvocationPayload, type MandateChain } from './types.js';
 import { nowSeconds } from './mandate.js';
+import { IDEMPOTENCY_KEY_RE } from './idempotency.js';
 
 export interface InvocationInput {
   /** Id of the leaf mandate the agent acts under. */
@@ -21,6 +22,11 @@ export interface InvocationInput {
    * cannot be replayed with another chain that happens to end in a mandate with the same id.
    */
   chain: MandateChain;
+  /**
+   * Idempotency key: the same value for every attempt of one intention (a retry after a timeout, a restart).
+   * Requires `args`. Only send it to a service that keeps idempotency keys: one that does not refuses it.
+   */
+  idempotencyKey?: string;
 }
 
 export function argsHash(args: unknown): string {
@@ -43,6 +49,12 @@ export function chainHash(chain: MandateChain): string {
 /** The agent signs what it is about to do, with the key named in its mandate. */
 export async function createInvocation(agentKey: SigningKey, input: InvocationInput): Promise<string> {
   if (!input.chain || typeof input.chain !== 'object') throw new Error('createInvocation needs the chain it is presented with');
+  if (input.idempotencyKey !== undefined) {
+    if (typeof input.idempotencyKey !== 'string' || !IDEMPOTENCY_KEY_RE.test(input.idempotencyKey)) {
+      throw new Error('idempotencyKey must be 16 to 128 base64url characters');
+    }
+    if (input.args === undefined) throw new Error('idempotencyKey requires args, so that the key covers the operation');
+  }
   const payload: InvocationPayload = {
     mandate: input.mandateId,
     action: input.action,
@@ -53,6 +65,7 @@ export async function createInvocation(agentKey: SigningKey, input: InvocationIn
     iat: nowSeconds(),
     ...(input.args !== undefined ? { args_hash: argsHash(input.args) } : {}),
     chain_hash: chainHash(input.chain),
+    ...(input.idempotencyKey !== undefined ? { idem: input.idempotencyKey } : {}),
   };
   return signCompactJwt(payload as unknown as Record<string, unknown>, { alg: 'ES256', typ: INVOCATION_TYP }, agentKey);
 }

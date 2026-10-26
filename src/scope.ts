@@ -1,6 +1,7 @@
 import type { Limits, Mandate } from './types.js';
 import { MANDATE_VERSION } from './types.js';
 import { isStatusReference } from './status.js';
+import { IDEMPOTENCY_KEY_RE } from './idempotency.js';
 
 const ACTION_RE = /^(\*|[a-z0-9_-]+(\.[a-z0-9_-]+)*(\.\*)?)$/;
 const CONCRETE_ACTION_RE = /^[a-z0-9_-]+(\.[a-z0-9_-]+)*$/;
@@ -134,8 +135,19 @@ export function validateInvocationPayload(p: unknown): string[] {
   if (typeof x.nonce !== 'string' || x.nonce.length === 0 || x.nonce.length > 256) e.push('nonce must be a string of 1 to 256 characters');
   if (typeof x.iat !== 'number' || !Number.isInteger(x.iat)) e.push('iat must be an integer');
   if (x.args_hash !== undefined && typeof x.args_hash !== 'string') e.push('args_hash must be a string');
+  if (x.idem !== undefined) {
+    if (typeof x.idem !== 'string' || !IDEMPOTENCY_KEY_RE.test(x.idem)) e.push('idem must be 16 to 128 base64url characters');
+    // A key that does not cover the arguments could pair a retry with a different operation.
+    if (x.args_hash === undefined) e.push('idem requires args_hash');
+  }
+  // As for mandates and delegations: a member this verifier does not know could be a constraint it would ignore.
+  const extra = Object.keys(x).filter((k) => !INVOCATION_MEMBERS.has(k));
+  if (extra.length) e.push(`unknown member ${extra.join(', ')}`);
   return e;
 }
+
+/** Members an invocation may carry. */
+const INVOCATION_MEMBERS: ReadonlySet<string> = new Set(['mandate', 'action', 'counterparty', 'amount', 'aud', 'nonce', 'iat', 'args_hash', 'chain_hash', 'idem']);
 
 function validateLimits(l: Limits): string[] {
   const e: string[] = [];

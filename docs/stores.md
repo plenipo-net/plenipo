@@ -1,8 +1,8 @@
 # Shared stores: Postgres and Redis
 
-`verifyAuthorization` and `handleMandateResponse` keep state in four places: the
-spending ledger, the invocation nonce store, the OpenID4VP response session
-store and the revocation registry. The in-memory implementations are correct
+`verifyAuthorization` and `handleMandateResponse` keep state in five places: the
+spending ledger, the invocation nonce store, the idempotency store, the OpenID4VP
+response session store and the revocation registry. The in-memory implementations are correct
 only inside one Node.js process. As soon as a relying party runs more than one
 verifier (several API gateway replicas, several workers), those stores must be
 shared, or each replica enforces its own copy of every limit and accepts every
@@ -16,6 +16,7 @@ common drivers satisfy directly or through a three-line adapter.
 | --- | --- | --- |
 | `SpendingLedger` | `PostgresSpendingLedger` | `RedisSpendingLedger` |
 | `NonceStore` (invocations) | `PostgresNonceStore` | `RedisNonceStore` |
+| `IdempotencyStore` | `PostgresIdempotencyStore` | `RedisIdempotencyStore` |
 | `NonceStore` (`sessions` of `handleMandateResponse`) | `createPostgresResponseSessionStore` | `createRedisResponseSessionStore` |
 | `RevocationRegistry` (+ `revoke`, `unrevoke`) | `PostgresRevocationRegistry` | `RedisRevocationRegistry` |
 | `MandateSessionStore` (request sessions between instances) | `PostgresMandateSessionStore` | `RedisMandateSessionStore` |
@@ -71,10 +72,11 @@ migration tool, and the file `src/stores/schema.sql`, which a test keeps
 identical to `POSTGRES_SCHEMA_SQL`. `migratePostgres` runs the whole schema as
 one `DO` block under a transaction-scoped advisory lock, so replicas migrating
 at the same moment wait for each other. The `schema_meta` table records the
-schema version (currently 3). Upgrading from versions 1 and 2 is part of the
+schema version (currently 4). Upgrading from versions 1 to 3 is part of the
 same migration (the `schema_upgrade` function runs each step once: version 2
 widens the reservation state constraint, version 3 adds the `released_by` and
-`corrected_at` columns); existing rows keep their meaning.
+`corrected_at` columns, version 4 adds the `idempotency` table); existing rows
+keep their meaning.
 
 Tables: `ledger` (committed and pending spending per mandate key and currency,
 BIGINT minor units), `reservations`, `nonces`, `revocations`,
@@ -321,6 +323,58 @@ OpenID4VP response sessions must never share a namespace: the OpenID4VP `state`
 is visible to anyone who sees the request. `PostgresNonceStore.sweep()` deletes
 expired rows (Redis expires keys on its own).
 
+## Idempotency keys
+
+`IdempotencyStore` keeps the keys that let an agent retry a call whose outcome
+it did not learn (docs/spec.md, section 5.1). One record per scoped key holds
+the request fingerprint, the attempt that holds the key, its reservation, and
+the stored result of an executed attempt.
+
+| State | Meaning | Kept |
+| --- | --- | --- |
+| `in_progress` | an attempt holds the key and is running | until finished; after `leaseSeconds` (default 300) it reads as `unknown` |
+| `unknown` | the attempt ended without knowing whether it ran, or was abandoned | until resolved: never forgotten |
+| `executed` | it ran; `result` is what the service stored for replays | `retentionSeconds` (default one day) |
+| `free` (internal) | it certainly did not run; the next `claim` takes the key | `retentionSeconds`, so a late "executed" still lands |
+
+`claim(key, fingerprint)` takes a free key for a new attempt or returns the
+record that holds it, atomically across instances:
+
+- Postgres: one `INSERT … ON CONFLICT (key) DO UPDATE … WHERE state = 'free' OR
+  (state = 'executed' AND expires_at <= now()) RETURNING attempt`. Concurrent
+  claims wait on the row and then see it held.
+- Redis: one Lua script per operation, every key of a store under the hash tag
+  `{<prefix>:idem}`. Keys are hashed into names. Unresolved attempts sit in a
+  sorted set (score: lease end, or 0 once unknown) that `unresolved()` reads.
+
+`finish(key, attempt, outcome, result?)` ends an attempt; only the attempt
+that holds the key can end it, and `executed` is final. Proof that the action
+ran wins, as in the ledger: an `executed` from an attempt whose key was freed
+in the meantime, and not claimed again, still marks the key executed.
+
+**Reconciliation.** `unresolved()` lists the keys blocked on an unknown
+outcome, each with the attempt that holds it; `resolve(key, 'executed' |
+'not_executed', attempt)` settles that attempt. `resolve` is compare-and-set on
+the attempt: an outcome learned about one attempt never settles a newer one
+that took the key in the meantime, whether it comes from an operator acting on
+an old listing or from a concurrent retry. When the attempt held a reservation
+of a Postgres or Redis ledger, reconciling the reservation is enough: on the
+next retry the verifier reads the reservation, a committed one marks that
+attempt executed and a released one frees the key. Keys of calls that reserved
+nothing (no total limit) need `resolve`. `InMemoryIdempotencyStore` sweeps its
+expired records on its own (at most every minute, or every retention period)
+and has `sweep()`.
+
+**Retention.** After `retentionSeconds` an executed key is forgotten and a
+retry with it runs again: keep it longer than any retry an agent may make.
+`PostgresIdempotencyStore.sweep()` deletes expired rows; Redis expires them on
+its own. Stored results contain whatever the service returned, personal data
+included; `maxReplayBytes` (guard and gateway, default 64 KiB, `0` for none)
+bounds them, and a store refuses results above 256 KiB (`MAX_STORED_RESULT_BYTES`):
+`guardTool` accepts at most that, the gateway at most `MAX_REPLAY_BODY_BYTES`
+(about 191 KiB, since it stores the body as base64). If a store still refuses
+a result, the attempt is recorded as executed without it.
+
 ## OpenID4VP sessions
 
 `handleMandateResponse` needs a `sessions` nonce store so that each wallet
@@ -411,8 +465,10 @@ window, and prefer Postgres.
 - Spending amounts are BIGINT minor units; JavaScript values are checked to be
   safe integers in both directions, and a database value outside the safe range
   is reported as corruption rather than rounded.
-- Nonces and session ids are hashed before becoming Redis keys; prefixes and
-  namespaces are restricted to `[A-Za-z0-9_.:-]`.
+- Nonces, session ids and idempotency keys are hashed before becoming Redis
+  keys; prefixes and namespaces are restricted to `[A-Za-z0-9_.:-]`.
+- Idempotency keys are scoped by audience and chain hash before they reach a
+  store, so agents of different chains cannot collide or block each other's keys.
 - The ledger keys are mandate hashes, so delegators cannot choose ids that
   collide with another chain's entries.
 
@@ -424,7 +480,11 @@ window, and prefer Postgres.
 - A reservation stuck in `expired_spent` stays counted until someone reconciles
   it; without a reconciliation job, an agent whose calls keep failing in an
   unknown state runs out of budget early.
-- A Redis ledger lives in one cluster slot per prefix.
+- A Redis ledger lives in one cluster slot per prefix, and so does a Redis
+  idempotency store.
+- An idempotency key whose attempt is unknown blocks its retries until someone
+  resolves it, like an `expired_spent` reservation: without a reconciliation job,
+  an agent cannot repeat such a call with the same key.
 - The Postgres functions assume `READ COMMITTED`.
 - No automatic purge of settled reservations; call `purgeSettled` if you want one.
 - The Redis stores are tested against a single redis-server, not a cluster.

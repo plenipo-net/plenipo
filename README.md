@@ -13,11 +13,11 @@ Plenipo gives AI agents the same thing, with one difference: the powers are neve
 Every mandate has a scope, limits and an expiry, every sub-delegation can only narrow it,
 and the person can revoke it at any time.
 
-> Status: 0.4, experimental. The cryptography is real; wallets, PID providers and banks in
-> the examples and the sandbox are test doubles. The code went through two rounds of security review
-> by independent AI review agents, and their findings are fixed (see [CHANGELOG.md](CHANGELOG.md)); it
-> has not yet been audited by an external security firm. Do not use it to protect real money or real
-> data yet.
+> Status: 0.5, experimental. The cryptography is real; wallets, PID providers and banks in
+> the examples and the sandbox are test doubles. The code went through security reviews by independent
+> AI review agents (two rounds for 0.3, one for 0.5), and their findings are fixed (see
+> [CHANGELOG.md](CHANGELOG.md)); it has not yet been audited by an external security firm. Do not use it
+> to protect real money or real data yet.
 
 ## Why Plenipo
 
@@ -59,7 +59,7 @@ a mandate, and the person can revoke it at any time.
    path of authority and only the PID claims the person chose to disclose.
 
 The wire formats and verification rules are specified in [docs/spec.md](docs/spec.md), with
-[test vectors](test-vectors/plenipo-0.1.json) for other implementations. The reasons behind them are
+[test vectors](test-vectors/plenipo-0.2.json) for other implementations. The reasons behind them are
 in [docs/design.md](docs/design.md).
 
 ## Install
@@ -164,7 +164,8 @@ const bookTrain = guardTool<{ route: string; price_cents: number }>(handler, {
 | Experimental: Delegate SD-JWT links, TS12 e-mandate roots, legal persons and roles | `plenipo/experimental` | [delegation](docs/delegation.md), [root](docs/root.md) |
 | Trust: x5c chains, EU Lists of Trusted Entities (ETSI TS 119 602), CRL and OCSP | `plenipo` | [trust](docs/trust.md) |
 | Keys in a KMS or HSM (`ExternalSigner`) | `plenipo` | this README |
-| Shared stores on Postgres and Redis: ledger, nonces, sessions, revocation | `plenipo` | [stores](docs/stores.md) |
+| Shared stores on Postgres and Redis: ledger, nonces, idempotency keys, sessions, revocation | `plenipo` | [stores](docs/stores.md) |
+| Idempotent retries: one signed key per intention, at most one attempt runs | `plenipo` | [spec](docs/spec.md), [integration](docs/integration.md) |
 | Bank integration: HTTP gateway, problem+json errors, status list service, audit log, OPA and Cedar export | `plenipo` | [integration](docs/integration.md) |
 | MCP guard | `plenipo/mcp` | [design](docs/design.md) |
 | Test PID provider, wallet and CA (development only) | `plenipo/testing` | [examples](examples/README.md) |
@@ -201,7 +202,10 @@ See [ROADMAP.md](ROADMAP.md). Changes by version are in [CHANGELOG.md](CHANGELOG
   (the EU LOTL and national TSLs) are refused.
 - Delegate SD-JWT follows individual draft -00, which expired on 23 October 2026 without a
   successor; it is experimental and off by default.
-- Status lists are cached up to a bounded age, which is the revocation latency verifiers accept.
+- Status lists are cached up to a bounded age, which is the revocation latency verifiers accept
+  (60 s by default; calls that move money can require a fresher list with `maxStatusAgeSeconds`).
+- An idempotency key whose first attempt has an unknown outcome blocks retries until the service
+  reconciles it; the library lists such keys but does not reconcile them with a core banking system.
 
 ## Contributing and security
 

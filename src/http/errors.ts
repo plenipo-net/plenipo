@@ -13,7 +13,7 @@ export const PROBLEM_CONTENT_TYPE = 'application/problem+json';
 /**
  * Broad class of a failure. `authentication`: the presented chain or invocation is not valid credentials.
  * `authorization`: valid credentials that do not cover this request. `request`: the HTTP request itself is
- * unusable. `conflict`: replay. `infrastructure`: a dependency could not be reached, retry may succeed.
+ * unusable. `conflict`: replay, or another attempt with the same idempotency key. `infrastructure`: a dependency could not be reached, retry may succeed.
  * `configuration`: the service is misconfigured; the caller cannot fix it.
  */
 export type ProblemKind = 'authentication' | 'authorization' | 'request' | 'conflict' | 'infrastructure' | 'configuration';
@@ -67,6 +67,10 @@ export const DENY_PROBLEMS: Readonly<Record<DenyCode, ProblemSpec>> = Object.fre
   ATTESTATION_REVOKED: spec(401, 'attestation_revoked', 'An attestation is revoked or suspended', 'authentication'),
   ROLE_EXCEEDED: spec(403, 'role_exceeded', 'The mandate exceeds the representative role', 'authorization'),
   STATUS_UNAVAILABLE: spec(503, 'status_unavailable', 'A status list could not be checked', 'infrastructure'),
+  IDEMPOTENCY_CONFLICT: spec(422, 'idempotency_conflict', 'The idempotency key was used for a different request', 'request'),
+  IDEMPOTENCY_IN_PROGRESS: spec(409, 'idempotency_in_progress', 'An attempt with this idempotency key is still running', 'conflict'),
+  IDEMPOTENCY_UNRESOLVED: spec(409, 'idempotency_unresolved', 'The outcome of an earlier attempt with this idempotency key is not known yet', 'conflict'),
+  ALREADY_EXECUTED: spec(409, 'already_executed', 'An earlier attempt with this idempotency key already executed', 'conflict'),
   INTERNAL: spec(500, 'internal', 'The request could not be processed', 'infrastructure'),
 });
 
@@ -142,7 +146,7 @@ export interface ProblemResponseOptions {
 
 /**
  * Builds the HTTP response for a problem. 401 responses carry a `WWW-Authenticate: Plenipo` challenge, as
- * RFC 9110 requires; 503 responses carry `Retry-After`. Problems are never cached.
+ * RFC 9110 requires; 503 responses and `idempotency_in_progress` carry `Retry-After`. Problems are never cached.
  */
 export function problemResponse(p: ProblemDetails, opts: ProblemResponseOptions = {}): Response {
   const headers = new Headers({
@@ -155,6 +159,7 @@ export function problemResponse(p: ProblemDetails, opts: ProblemResponseOptions 
     const realm = opts.realm && /^[\x20-\x7e]*$/.test(opts.realm) && !/["\\]/.test(opts.realm) ? `realm="${opts.realm}", ` : '';
     headers.set('www-authenticate', `Plenipo ${realm}error="${p.code}"`);
   }
-  if (p.status === 503) headers.set('retry-after', String(opts.retryAfterSeconds ?? 5));
+  // A running attempt usually ends within seconds: tell the agent when to ask again.
+  if (p.status === 503 || p.code === 'idempotency_in_progress') headers.set('retry-after', String(opts.retryAfterSeconds ?? 5));
   return new Response(JSON.stringify(p), { status: p.status, headers });
 }

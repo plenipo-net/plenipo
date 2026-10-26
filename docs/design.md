@@ -239,7 +239,11 @@ fetched over https only, without redirects, within 5 seconds and up to 1 MB.
   allocated at random. `StatusListCache` keys entries by URI, signer identity
   and trust configuration, and keeps them for the shortest of its maximum age,
   the token `ttl` and the token `exp`: that bound is the revocation latency a
-  verifier accepts.
+  verifier accepts. Lists published by this library carry `ttl` 60 by default
+  (`DEFAULT_STATUS_TTL_SECONDS`). A call that needs a shorter bound sets
+  `maxStatusAgeSeconds`: a cached list obtained earlier is fetched again, and
+  the fetcher asks HTTP caches for a copy no older than that; `0` fetches on
+  every call.
 - The list itself (`status_list.lst`) is decoded by Plenipo: strict base64url,
   ZLIB inflate stopped at `maxListBytes` (default 1 MiB, that is 4 194 304
   entries at 2 bits; configurable in `checkStatus` options), `bits` in
@@ -270,6 +274,39 @@ fetched over https only, without redirects, within 5 seconds and up to 1 MB.
   commits after the tool succeeds and releases otherwise; direct callers of
   `verifyAuthorization` must do the same with the returned `reservation`.
 - `NonceStore.consume(nonce)`, mandatory.
+
+## Idempotency
+
+The nonce stops a captured invocation from running twice, and it also stops
+the agent itself from repeating a call it is unsure about: after a timeout the
+only way to retry is a new invocation, which the verifier sees as a new
+operation. Before 0.5 a crash between the bank's debit and its answer could
+therefore lead to a second payment, within the mandate's limits but paid twice.
+
+An invocation can carry `idem`, an idempotency key the agent keeps for every
+attempt of one intention. Each attempt is still a fresh invocation, with its
+own nonce and `iat`, so replay protection and freshness are unchanged. The key
+is inside the signature: an intermediary that could change it could make one
+intention run twice, or two intentions collide. The verifier stores it under
+a scope made of the audience and the chain hash, with the fingerprint of the
+request (action, counterparty, amount, `args_hash`), and lets at most one
+attempt per key reach the action. `args_hash` is required with a key, so a key
+cannot be paired with a different operation.
+
+The claim happens after every check that can refuse the call and before the
+reservation: a refused attempt never blocks a key, and the retry of an executed
+call is answered from its record instead of reserving again. An attempt ends
+like a reservation, with one rule: the key is freed only when it is certain
+the action did not run. An unknown outcome blocks the key until reconciled,
+and a shared ledger's reconciliation of the attempt's reservation settles the
+key too. That is what keeps a retry from paying while the first attempt might
+have paid.
+
+Verifiers of profile 0.1 ignored unknown invocation members, so an agent that
+sends a key to them gets no protection. From 0.5 unknown members are refused,
+and a verifier without an idempotency store refuses an invocation that carries
+a key. Agents send keys only where the service says it keeps them (the sandbox
+bank marks its tools with `idempotent: true`).
 
 ## OpenID4VP
 
@@ -337,6 +374,13 @@ failures `not-executed`, so they do not consume budget.
 The handler receives the verified decision as its third argument (principal,
 path of authority, exact invocation). `now` may be a function, read at every
 call.
+
+With `idempotency` in the options, the guard ends the attempt holding an
+invocation's idempotency key with the same outcome as the reservation, and
+keeps the result of an executed call (up to `maxReplayBytes`, default 64 KiB).
+A retry of an executed call gets that result, marked with
+`_meta['plenipo/replay']`, and the handler does not run; a retry while the first
+outcome is unknown is refused with `IDEMPOTENCY_UNRESOLVED`.
 
 ## Compatibility
 

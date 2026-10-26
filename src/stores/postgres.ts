@@ -1,6 +1,6 @@
 /**
  * Postgres implementations of the stateful interfaces, so several verifier instances can share
- * spending, nonces, revocations and OpenID4VP sessions.
+ * spending, nonces, idempotency keys, revocations and OpenID4VP sessions.
  *
  * No driver is imported: every store takes a {@link SqlClient}, which a `pg` Pool or Client and a
  * PGlite instance satisfy as they are. Every operation is a single SQL statement, so a pool can run it
@@ -10,6 +10,20 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { MandateRequestSession } from '../openid4vp.js';
 import type { LedgerEntry, NonceStore, SpendingLedger } from '../registry.js';
 import type { Amount } from '../types.js';
+import {
+  idempotencyDuration,
+  isAttemptId,
+  validateFingerprint,
+  validateIdempotencyKey,
+  validateOutcome,
+  validateResult,
+  type AttemptOutcome,
+  type IdempotencyClaim,
+  type IdempotencyRecord,
+  type IdempotencyState,
+  type IdempotencyStore,
+  type IdempotencyStoreOptions,
+} from '../idempotency.js';
 import {
   deserializeSession,
   durationSeconds,
@@ -45,7 +59,7 @@ export interface PostgresNamingOptions {
 
 const IDENT_RE = /^[a-z_][a-z0-9_]{0,39}$/;
 /** Bumped when the schema changes; recorded so a future migration knows where it starts from. */
-export const POSTGRES_SCHEMA_VERSION = 3;
+export const POSTGRES_SCHEMA_VERSION = 4;
 
 interface Names {
   ledger: string;
@@ -53,6 +67,7 @@ interface Names {
   nonces: string;
   revocations: string;
   sessions: string;
+  idempotency: string;
   meta: string;
   reserve: string;
   settle: string;
@@ -79,6 +94,7 @@ function names(opts: PostgresNamingOptions = {}): Names {
     nonces: q('nonces'),
     revocations: q('revocations'),
     sessions: q('request_sessions'),
+    idempotency: q('idempotency'),
     meta: q('schema_meta'),
     reserve: q('ledger_reserve'),
     settle: q('ledger_settle'),
@@ -138,6 +154,10 @@ BEGIN
     ALTER TABLE ${n.reservations} ADD COLUMN IF NOT EXISTS corrected_at TIMESTAMPTZ;
     UPDATE ${n.meta} SET version = 3 WHERE id = 1;
   END IF;
+  -- Version 3 to 4: only a new table (idempotency keys), created below.
+  IF (SELECT version FROM ${n.meta} WHERE id = 1) < 4 THEN
+    UPDATE ${n.meta} SET version = 4 WHERE id = 1;
+  END IF;
 END
 $plenipo$`,
     `SELECT ${n.upgrade}()`,
@@ -159,6 +179,21 @@ $plenipo$`,
   expires_at TIMESTAMPTZ NOT NULL
 )`,
     `CREATE INDEX IF NOT EXISTS ${n.prefix}request_sessions_expiry_idx ON ${n.sessions} (expires_at)`,
+    // Idempotency keys. `free` keeps a released key until it expires, so a late "executed" still lands;
+    // in_progress and unknown rows never expire: they block their key until reconciled.
+    `CREATE TABLE IF NOT EXISTS ${n.idempotency} (
+  key TEXT COLLATE "C" PRIMARY KEY CHECK (length(key) BETWEEN 1 AND 256),
+  fingerprint TEXT NOT NULL CHECK (length(fingerprint) BETWEEN 1 AND 256),
+  state TEXT NOT NULL CHECK (state IN ('in_progress', 'unknown', 'executed', 'free')),
+  attempt UUID NOT NULL,
+  reservation TEXT CHECK (reservation IS NULL OR length(reservation) BETWEEN 1 AND 256),
+  result TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  lease_until TIMESTAMPTZ,
+  expires_at TIMESTAMPTZ
+)`,
+    `CREATE INDEX IF NOT EXISTS ${n.prefix}idempotency_open_idx ON ${n.idempotency} (lease_until) WHERE state IN ('in_progress', 'unknown')`,
+    `CREATE INDEX IF NOT EXISTS ${n.prefix}idempotency_expiry_idx ON ${n.idempotency} (expires_at) WHERE state IN ('executed', 'free')`,
     // Reserve: all or nothing over every entry of the chain. Rows are created and then locked in key
     // order, so two reservations over overlapping chains always queue instead of deadlocking.
     // Runs as one statement: in READ COMMITTED each query below sees the rows as last committed.
@@ -657,6 +692,158 @@ export class PostgresMandateSessionStore implements MandateSessionStore {
     const rows = rowsOf(
       await this.db.query(
         `WITH gone AS (DELETE FROM ${t} WHERE id IN (SELECT id FROM ${t} WHERE expires_at <= now() LIMIT $1::integer) RETURNING 1)
+         SELECT count(*) AS n FROM gone`,
+        [limit],
+      ),
+    );
+    return toSafeInteger(rows[0]?.n ?? 0, 'count');
+  }
+}
+
+/**
+ * Idempotency keys shared by every instance. `claim` is one INSERT ... ON CONFLICT: under concurrency exactly
+ * one caller takes a free key, the others wait on the row and then see it held.
+ */
+export class PostgresIdempotencyStore implements IdempotencyStore {
+  private readonly n: Names;
+  readonly retentionSeconds: number;
+  readonly leaseSeconds: number;
+
+  constructor(
+    private readonly db: SqlClient,
+    opts: IdempotencyStoreOptions & PostgresNamingOptions = {},
+  ) {
+    this.n = names(opts);
+    this.retentionSeconds = idempotencyDuration('retentionSeconds', opts.retentionSeconds, 24 * 3600);
+    this.leaseSeconds = idempotencyDuration('leaseSeconds', opts.leaseSeconds, 300);
+  }
+
+  /** Columns of a live record, with an abandoned attempt shown as unknown. Free and expired rows are not live. */
+  private select(where: string): string {
+    return `SELECT key, fingerprint, attempt::text AS attempt, reservation, result,
+              CASE WHEN state = 'in_progress' AND lease_until <= now() THEN 'unknown' ELSE state END AS state
+              FROM ${this.n.idempotency}
+             WHERE ${where} AND state <> 'free' AND NOT (state = 'executed' AND expires_at <= now())`;
+  }
+
+  private record(row: Record<string, unknown>): IdempotencyRecord {
+    const state = String(row.state) as IdempotencyState;
+    if (state !== 'in_progress' && state !== 'unknown' && state !== 'executed') throw new TypeError('invalid idempotency state from the database');
+    return {
+      key: String(row.key),
+      fingerprint: String(row.fingerprint),
+      state,
+      attempt: String(row.attempt),
+      ...(row.reservation !== null && row.reservation !== undefined ? { reservation: String(row.reservation) } : {}),
+      ...(row.result !== null && row.result !== undefined ? { result: String(row.result) } : {}),
+    };
+  }
+
+  async claim(key: string, fingerprint: string): Promise<IdempotencyClaim> {
+    validateIdempotencyKey(key);
+    validateFingerprint(fingerprint);
+    const t = this.n.idempotency;
+    // A row seen as free (or expired) by the first statement can be taken by another instance before the
+    // second: try again a few times, then report the key as held by whoever took it.
+    for (let i = 0; i < 3; i++) {
+      const attempt = randomUUID();
+      const taken = rowsOf(
+        await this.db.query(
+          `INSERT INTO ${t} AS t (key, fingerprint, state, attempt, lease_until)
+           VALUES ($1, $2, 'in_progress', $3::uuid, now() + make_interval(secs => $4::double precision))
+           ON CONFLICT (key) DO UPDATE
+              SET fingerprint = EXCLUDED.fingerprint, state = 'in_progress', attempt = EXCLUDED.attempt,
+                  reservation = NULL, result = NULL, created_at = now(), lease_until = EXCLUDED.lease_until, expires_at = NULL
+            WHERE t.state = 'free' OR (t.state = 'executed' AND t.expires_at <= now())
+           RETURNING attempt::text AS attempt`,
+          [key, fingerprint, attempt, this.leaseSeconds],
+        ),
+      );
+      if (taken.length === 1 && String(taken[0].attempt) === attempt) return { claimed: true, attempt };
+      const held = rowsOf(await this.db.query(this.select('key = $1'), [key]));
+      if (held.length === 1) return { claimed: false, record: this.record(held[0]) };
+    }
+    throw new Error('the idempotency key could not be claimed or read');
+  }
+
+  async attach(key: string, attempt: string, reservation: string): Promise<void> {
+    validateIdempotencyKey(key);
+    if (!isAttemptId(attempt) || typeof reservation !== 'string' || reservation.length === 0 || reservation.length > 256) return;
+    await this.db.query(
+      `UPDATE ${this.n.idempotency} SET reservation = $3 WHERE key = $1 AND attempt = $2::uuid AND state IN ('in_progress', 'unknown')`,
+      [key, attempt, reservation],
+    );
+  }
+
+  async finish(key: string, attempt: string, outcome: AttemptOutcome, result?: string): Promise<void> {
+    validateIdempotencyKey(key);
+    validateOutcome(outcome);
+    validateResult(result);
+    if (!isAttemptId(attempt)) return;
+    const t = this.n.idempotency;
+    if (outcome === 'executed') {
+      // Also from free: proof that the action ran wins over an earlier "did not run".
+      await this.db.query(
+        `UPDATE ${t} SET state = 'executed', result = $3, lease_until = NULL,
+                expires_at = now() + make_interval(secs => $4::double precision)
+          WHERE key = $1 AND attempt = $2::uuid AND state IN ('in_progress', 'unknown', 'free')`,
+        [key, attempt, result ?? null, this.retentionSeconds],
+      );
+    } else if (outcome === 'not_executed') {
+      await this.db.query(
+        `UPDATE ${t} SET state = 'free', result = NULL, lease_until = NULL,
+                expires_at = now() + make_interval(secs => $3::double precision)
+          WHERE key = $1 AND attempt = $2::uuid AND state IN ('in_progress', 'unknown')`,
+        [key, attempt, this.retentionSeconds],
+      );
+    } else {
+      await this.db.query(`UPDATE ${t} SET state = 'unknown' WHERE key = $1 AND attempt = $2::uuid AND state = 'in_progress'`, [key, attempt]);
+    }
+  }
+
+  async resolve(key: string, outcome: 'executed' | 'not_executed', attempt: string): Promise<boolean> {
+    validateIdempotencyKey(key);
+    if (outcome !== 'executed' && outcome !== 'not_executed') throw new RangeError('outcome must be executed or not_executed');
+    if (!isAttemptId(attempt)) throw new RangeError('resolve needs the attempt that holds the key');
+    const rows = rowsOf(
+      await this.db.query(
+        `UPDATE ${this.n.idempotency} SET state = $2, lease_until = NULL,
+                expires_at = now() + make_interval(secs => $3::double precision)
+          WHERE key = $1 AND attempt = $4::uuid AND state IN ('in_progress', 'unknown')
+         RETURNING 1 AS ok`,
+        [key, outcome === 'executed' ? 'executed' : 'free', this.retentionSeconds, attempt],
+      ),
+    );
+    return rows.length === 1;
+  }
+
+  async get(key: string): Promise<IdempotencyRecord | undefined> {
+    validateIdempotencyKey(key);
+    const rows = rowsOf(await this.db.query(this.select('key = $1'), [key]));
+    return rows.length === 1 ? this.record(rows[0]) : undefined;
+  }
+
+  async unresolved(opts: { limit?: number } = {}): Promise<IdempotencyRecord[]> {
+    const limit = positiveInt('limit', opts.limit, 100, 10_000);
+    const rows = rowsOf(
+      await this.db.query(
+        `${this.select(`(state = 'unknown' OR (state = 'in_progress' AND lease_until <= now()))`)} ORDER BY created_at LIMIT $1::integer`,
+        [limit],
+      ),
+    );
+    return rows.map((r) => this.record(r));
+  }
+
+  /** Deletes executed and free records past their retention. Returns how many were deleted. */
+  async sweep(opts: { limit?: number } = {}): Promise<number> {
+    const limit = positiveInt('limit', opts.limit, 10_000);
+    const t = this.n.idempotency;
+    const rows = rowsOf(
+      await this.db.query(
+        `WITH gone AS (
+           DELETE FROM ${t} WHERE ctid IN (
+             SELECT ctid FROM ${t} WHERE state IN ('executed', 'free') AND expires_at <= now() LIMIT $1::integer)
+           RETURNING 1)
          SELECT count(*) AS n FROM gone`,
         [limit],
       ),

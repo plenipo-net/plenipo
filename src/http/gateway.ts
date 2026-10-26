@@ -12,6 +12,7 @@
  * spent by the ledger. The downstream handler can state the outcome explicitly (see OUTCOME_HEADER).
  */
 import type { SpendingLedger } from '../registry.js';
+import { DEFAULT_MAX_REPLAY_BYTES, MAX_STORED_RESULT_BYTES, type AttemptOutcome, type IdempotencyStore } from '../idempotency.js';
 import type { AuditLog } from '../audit.js';
 import type { Amount, Decision } from '../types.js';
 import { verifyAuthorization, type VerifyOptions } from '../verify.js';
@@ -36,6 +37,12 @@ export type DenyDecision = Extract<Decision, { decision: 'DENY' }>;
  * It overrides the status-code rule and is removed before the response reaches the client.
  */
 export const OUTCOME_HEADER = 'plenipo-outcome';
+
+/**
+ * Response header set to `true` on the stored response of an earlier attempt with the same idempotency key,
+ * returned instead of calling the API again.
+ */
+export const REPLAY_HEADER = 'plenipo-replay';
 
 /** What a route mapping function sees. The body has already been read, within the size limit. */
 export interface RouteContext {
@@ -88,6 +95,12 @@ export interface GatewayRoute {
    * when the action, counterparty and amount fully determine the operation.
    */
   args?: Extractor<unknown> | null;
+  /**
+   * Maximum age of a cached status list for requests on this route, in seconds; overrides
+   * `verify.maxStatusAgeSeconds`. Set it low on routes that move money, so a revoked mandate stops there
+   * within this bound whatever the cache lifetime; `0` checks the list on every request.
+   */
+  maxStatusAgeSeconds?: number;
 }
 
 export interface GatewayRequestInfo {
@@ -149,6 +162,14 @@ export interface GatewayOptions extends HeaderLimits, ProblemResponseOptions {
   policy?: PolicyHook;
   /** Forward the Plenipo headers to the downstream handler. Default false: they carry PID data. */
   forwardAuthorizationHeaders?: boolean;
+  /**
+   * Largest response kept for idempotent replays (`verify.idempotency`), in bytes of body. Default 65536,
+   * at most `MAX_REPLAY_BODY_BYTES` (what a store accepts once encoded); `0` keeps none. Only requests that
+   * carry an idempotency key are kept. A response that is larger, or whose body does not arrive within a
+   * second, is passed through untouched and not kept: a retry then gets `already_executed` without it.
+   * Kept responses live in the idempotency store with whatever personal data they carry.
+   */
+  maxReplayBytes?: number;
 }
 
 /**
@@ -156,6 +177,28 @@ export interface GatewayOptions extends HeaderLimits, ProblemResponseOptions {
  * otherwise pending); `error` is pending; `outcome` states it directly.
  */
 export type SettleInput = { status: number } | { error: unknown } | { outcome: SettlementOutcome };
+
+/** A response to keep for idempotent replays, as given to `settle` in authorize mode. */
+export interface ReplayResponse {
+  status: number;
+  contentType?: string;
+  body: Uint8Array | string;
+}
+
+/**
+ * Largest body `maxReplayBytes` may allow: a stored response is base64 inside JSON, and a store accepts
+ * `MAX_STORED_RESULT_BYTES` at most.
+ */
+export const MAX_REPLAY_BODY_BYTES = Math.floor(((MAX_STORED_RESULT_BYTES - 1024) * 3) / 4);
+
+/** A response as stored for idempotent replays. */
+interface StoredResponse {
+  v: 1;
+  status: number;
+  content_type?: string;
+  /** Base64 of the body bytes. */
+  body: string;
+}
 
 export type AuthorizeResult =
   | { kind: 'deny'; response: Response; problem: ProblemDetails; decision?: Decision }
@@ -172,11 +215,13 @@ export type AuthorizeResult =
        */
       request: Request;
       /**
-       * Settles the reservation. `commit` and `release` are final; later calls are ignored. `pending` records
-       * that the outcome is unknown and leaves the reservation to reconciliation; a later commit or release
-       * still applies. A reservation never settled stays pending and counts against the limits.
+       * Settles the reservation and the idempotency key. `commit` and `release` are final; later calls are
+       * ignored. `pending` records that the outcome is unknown and leaves both to reconciliation; a later
+       * commit or release still applies. A reservation never settled stays pending and counts against the
+       * limits, and its key blocks retries until reconciled. With `replay`, a committed request that carries
+       * an idempotency key keeps that response for replays (body within `maxReplayBytes`).
        */
-      settle(input: SettleInput): Promise<void>;
+      settle(input: SettleInput, replay?: ReplayResponse): Promise<void>;
     };
 
 export const DEFAULT_MAX_BODY_BYTES = 1024 * 1024;
@@ -214,6 +259,8 @@ function compileRoute(route: GatewayRoute): CompiledRoute {
     }
   }
   if (route.args !== undefined && route.args !== null && typeof route.args !== 'function') throw new Error('route args must be a function or null');
+  const age = route.maxStatusAgeSeconds;
+  if (age !== undefined && (typeof age !== 'number' || !Number.isFinite(age) || age < 0)) throw new Error('route maxStatusAgeSeconds must be a non-negative number');
   const raw = route.path.length > 1 && route.path.endsWith('/') ? route.path.slice(0, -1) : route.path;
   const segments = raw
     .split('/')
@@ -489,6 +536,90 @@ export function outcomeFromHeader(value: string | null): SettlementOutcome | und
   }
 }
 
+/**
+ * Reads the body of a response to keep it for replays, up to `max` bytes and one second. No tee: the body is
+ * read once, and the response handed back to the client is rebuilt from the bytes read so far followed by the
+ * rest of the stream, so a large or never-ending body reaches the client as it would have without capture.
+ */
+async function captureResponse(response: Response, max: number): Promise<{ response: Response; replay?: ReplayResponse }> {
+  const contentType = response.headers.get('content-type') ?? undefined;
+  const replayOf = (body: Uint8Array): ReplayResponse => ({ status: response.status, ...(contentType ? { contentType } : {}), body });
+  if (!response.body) return { response, replay: replayOf(new Uint8Array(0)) };
+  if (Number(response.headers.get('content-length') ?? '0') > max) return { response };
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  let pending: Promise<ReadableStreamReadResult<Uint8Array>> | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<'timeout'>((r) => {
+    timer = setTimeout(() => r('timeout'), 1000);
+  });
+  const rebuild = (complete: boolean): Response => {
+    const prefix = chunks.slice();
+    const stream = new ReadableStream<Uint8Array>({
+      start(c) {
+        for (const chunk of prefix) c.enqueue(chunk);
+        if (complete) c.close();
+      },
+      async pull(c) {
+        // A read started during capture and still pending comes first, or its bytes would be lost.
+        const next = await (pending ?? reader.read());
+        pending = undefined;
+        if (next.done) c.close();
+        else c.enqueue(next.value);
+      },
+      cancel(reason) {
+        return reader.cancel(reason);
+      },
+    });
+    return new Response(stream, { status: response.status, statusText: response.statusText, headers: response.headers });
+  };
+  try {
+    for (;;) {
+      pending = reader.read();
+      const next = await Promise.race([pending, timeout]);
+      if (next === 'timeout') return { response: rebuild(false) };
+      pending = undefined;
+      if (next.done) {
+        const body = new Uint8Array(size);
+        let off = 0;
+        for (const c of chunks) {
+          body.set(c, off);
+          off += c.byteLength;
+        }
+        return { response: rebuild(true), replay: replayOf(body) };
+      }
+      chunks.push(next.value);
+      size += next.value.byteLength;
+      if (size > max) return { response: rebuild(false) };
+    }
+  } catch {
+    // The body failed while being read: hand the client what arrived, then the same failure.
+    pending = Promise.reject(new Error('the response body could not be read'));
+    pending.catch(() => undefined);
+    return { response: rebuild(false) };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** The stored response of an earlier attempt, or undefined when none was kept or it cannot be read. */
+function replayResponse(result: string | undefined): Response | undefined {
+  if (result === undefined) return undefined;
+  try {
+    const r = JSON.parse(result) as StoredResponse;
+    if (r?.v !== 1 || !Number.isInteger(r.status) || r.status < 200 || r.status > 599 || typeof r.body !== 'string') return undefined;
+    const headers = new Headers({ 'cache-control': 'no-store', [REPLAY_HEADER]: 'true' });
+    if (typeof r.content_type === 'string' && /^[\x20-\x7e]+$/.test(r.content_type)) headers.set('content-type', r.content_type);
+    const body = Buffer.from(r.body, 'base64');
+    return new Response(r.status === 204 || r.status === 205 || r.status === 304 ? null : body, { status: r.status, headers });
+  } catch {
+    return undefined;
+  }
+}
+
+const ATTEMPT_OUTCOME: Record<SettlementOutcome, AttemptOutcome> = { commit: 'executed', release: 'not_executed', pending: 'unknown' };
+
 export interface Gateway {
   /** Verifies a request and, on ALLOW, returns a settle function instead of calling the downstream handler. */
   authorize(request: Request): Promise<AuthorizeResult>;
@@ -505,6 +636,11 @@ export function createGateway(opts: GatewayOptions): Gateway {
   const routes = opts.routes.map(compileRoute);
   const maxBody = opts.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
   const ledger: SpendingLedger | undefined = opts.verify.ledger;
+  const idempotency: IdempotencyStore | undefined = opts.verify.idempotency;
+  const maxReplay = opts.maxReplayBytes ?? DEFAULT_MAX_REPLAY_BYTES;
+  if (!Number.isSafeInteger(maxReplay) || maxReplay < 0 || maxReplay > MAX_REPLAY_BODY_BYTES) {
+    throw new Error(`maxReplayBytes must be an integer from 0 to ${MAX_REPLAY_BODY_BYTES}, what a store accepts once encoded`);
+  }
 
   const safe = (fn: () => void) => {
     try {
@@ -546,6 +682,33 @@ export function createGateway(opts: GatewayOptions): Gateway {
     }
     emit({ phase: 'decision', request: info, decision: audit.decision, problem });
     return { kind: 'deny', response: problemResponse(problem, opts), problem, decision: audit.decision };
+  }
+
+  /** Ends the attempt holding the idempotency key. A store that fails leaves the key blocked: safe side. */
+  async function finishAttempt(decision: AllowDecision, outcome: AttemptOutcome, result?: string): Promise<void> {
+    if (!decision.idempotency || !idempotency) return;
+    const { key, attempt } = decision.idempotency;
+    try {
+      await idempotency.finish(key, attempt, outcome, result);
+    } catch (e) {
+      reportError(e, 'idempotency');
+      // A store that refuses the response must still learn that the request ran.
+      if (result !== undefined) await idempotency.finish(key, attempt, outcome).catch((e2) => reportError(e2, 'idempotency'));
+    }
+  }
+
+  /** The stored form of a response to keep, or undefined when it is too large or not a usable status. */
+  function storedReplay(replay: ReplayResponse | undefined): string | undefined {
+    if (!replay || maxReplay <= 0) return undefined;
+    const body = typeof replay.body === 'string' ? new TextEncoder().encode(replay.body) : replay.body;
+    if (!(body instanceof Uint8Array) || body.byteLength > maxReplay || !Number.isInteger(replay.status)) return undefined;
+    const stored: StoredResponse = {
+      v: 1,
+      status: replay.status,
+      ...(typeof replay.contentType === 'string' ? { content_type: replay.contentType } : {}),
+      body: Buffer.from(body.buffer, body.byteOffset, body.byteLength).toString('base64'),
+    };
+    return JSON.stringify(stored);
   }
 
   async function settleReservation(reservation: string | undefined, outcome: 'commit' | 'release'): Promise<void> {
@@ -606,20 +769,33 @@ export function createGateway(opts: GatewayOptions): Gateway {
 
     let decision: Decision;
     try {
-      decision = await verifyAuthorization(parsed.chain, parsed.invocation, { ...opts.verify, expected });
+      decision = await verifyAuthorization(parsed.chain, parsed.invocation, {
+        ...opts.verify,
+        ...(route.maxStatusAgeSeconds !== undefined ? { maxStatusAgeSeconds: route.maxStatusAgeSeconds } : {}),
+        expected,
+      });
     } catch (e) {
       // verifyAuthorization does not throw by contract; if it ever does, refuse without detail.
       reportError(e, 'verify');
       return deny(info, GATEWAY_PROBLEMS.processing_error, { reason: 'verifier threw', invocation: parsed.invocation });
     }
     if (decision.decision === 'DENY') {
-      return deny(info, problemSpecForDecision(decision), { decision, invocation: parsed.invocation }, decision.at);
+      const denied = await deny(info, problemSpecForDecision(decision), { decision, invocation: parsed.invocation }, decision.at);
+      // A retry of a request that already ran gets that request's stored response, and the API is not called.
+      if (decision.code === 'ALREADY_EXECUTED' && denied.kind === 'deny') {
+        const replay = replayResponse(decision.replay?.result);
+        if (replay) return { ...denied, response: replay };
+      }
+      return denied;
     }
 
     // From here on an ALLOW holds a reservation. Until the API is called, the action certainly has not run,
     // so every refusal below releases it; after that, settle() decides.
     const allowed = decision;
-    const release = () => settleReservation(allowed.reservation, 'release');
+    const release = async () => {
+      await settleReservation(allowed.reservation, 'release');
+      await finishAttempt(allowed, 'not_executed');
+    };
 
     // A route without a counterparty or amount must not run an invocation that names one: the mandate would
     // have been checked against a value the request does not carry.
@@ -683,7 +859,7 @@ export function createGateway(opts: GatewayOptions): Gateway {
     emit({ phase: 'decision', request: info, decision: allowed });
 
     let final = false;
-    const settle = async (input: SettleInput): Promise<void> => {
+    const settle = async (input: SettleInput, replay?: ReplayResponse): Promise<void> => {
       if (final) return;
       let outcome: SettlementOutcome;
       let status: number | undefined;
@@ -692,10 +868,9 @@ export function createGateway(opts: GatewayOptions): Gateway {
         status = input.status;
         outcome = outcomeForStatus(status);
       } else outcome = 'pending';
-      if (outcome !== 'pending') {
-        final = true;
-        await settleReservation(allowed.reservation, outcome);
-      }
+      if (outcome !== 'pending') final = true;
+      await finishAttempt(allowed, ATTEMPT_OUTCOME[outcome], outcome === 'commit' ? storedReplay(replay) : undefined);
+      if (outcome !== 'pending') await settleReservation(allowed.reservation, outcome);
       if (opts.audit) {
         try {
           await opts.audit.recordSettlement({
@@ -750,7 +925,16 @@ export function createGateway(opts: GatewayOptions): Gateway {
       headers.delete(OUTCOME_HEADER);
       response = new Response(response.body, { status: response.status, statusText: response.statusText, headers });
     }
-    await result.settle(explicit ? { outcome: explicit } : { status: response.status });
+    const input: SettleInput = explicit ? { outcome: explicit } : { status: response.status };
+    // Only a request whose key the store keeps, and that committed, is worth reading the body of.
+    let replay: ReplayResponse | undefined;
+    const commits = explicit ? explicit === 'commit' : outcomeForStatus(response.status) === 'commit';
+    if (commits && result.decision.idempotency && idempotency && maxReplay > 0) {
+      const captured = await captureResponse(response, maxReplay);
+      response = captured.response;
+      replay = captured.replay;
+    }
+    await result.settle(input, replay);
     return response;
   }
 

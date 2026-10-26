@@ -14,16 +14,20 @@ import {
   createPostgresResponseSessionStore,
   createRedisResponseSessionStore,
   fromIoredis,
+  InMemoryIdempotencyStore,
   InMemoryNonceStore,
   InMemorySpendingLedger,
   migratePostgres,
   nonceRetentionSeconds,
+  PostgresIdempotencyStore,
   PostgresMandateSessionStore,
   PostgresNonceStore,
   PostgresSpendingLedger,
+  RedisIdempotencyStore,
   RedisMandateSessionStore,
   RedisNonceStore,
   RedisSpendingLedger,
+  type IdempotencyStore,
   type NonceStore,
   type ReconcileOutcome,
   type ReservationInfo,
@@ -45,6 +49,8 @@ export interface BankStores {
   kind: StoreKind;
   ledger: SpendingLedger;
   nonces: NonceStore;
+  /** Idempotency keys of transfers: a retry after an unknown outcome never pays twice. */
+  idempotency: IdempotencyStore;
   /** Present for shared stores: the sweep, the unresolved list and reconciliation. */
   reservations?: {
     sweep(): Promise<number>;
@@ -117,7 +123,7 @@ export async function createStores(opts: StoreOptions = {}): Promise<SandboxStor
     case 'memory':
       return {
         kind,
-        bank: { kind, ledger: new InMemorySpendingLedger(), nonces: new InMemoryNonceStore() },
+        bank: { kind, ledger: new InMemorySpendingLedger(), nonces: new InMemoryNonceStore(), idempotency: new InMemoryIdempotencyStore() },
         platform: { requestSessions: new InMemoryMandateSessionStore(), responseSessions: new InMemoryNonceStore() },
         housekeeping: async () => {},
         close: async () => {},
@@ -137,14 +143,16 @@ export async function createStores(opts: StoreOptions = {}): Promise<SandboxStor
       const nonces = new PostgresNonceStore(pool, { ...naming, retentionSeconds: NONCE_RETENTION });
       const requestSessions = new PostgresMandateSessionStore(pool, naming);
       const responseSessions = createPostgresResponseSessionStore(pool, naming);
+      const idempotency = new PostgresIdempotencyStore(pool, naming);
       return {
         kind,
-        bank: { kind, ledger, nonces, reservations: reservationsOf(ledger) },
+        bank: { kind, ledger, nonces, idempotency, reservations: reservationsOf(ledger) },
         platform: { requestSessions, responseSessions },
         housekeeping: async () => {
           await nonces.sweep();
           await responseSessions.sweep();
           await requestSessions.sweep();
+          await idempotency.sweep();
         },
         close: () => pool.end(),
       };
@@ -163,7 +171,13 @@ export async function createStores(opts: StoreOptions = {}): Promise<SandboxStor
       const ledger = new RedisSpendingLedger(redis, { prefix, pendingTtlSeconds: opts.pendingTtlSeconds });
       return {
         kind,
-        bank: { kind, ledger, nonces: new RedisNonceStore(redis, { prefix, retentionSeconds: NONCE_RETENTION }), reservations: reservationsOf(ledger) },
+        bank: {
+          kind,
+          ledger,
+          nonces: new RedisNonceStore(redis, { prefix, retentionSeconds: NONCE_RETENTION }),
+          idempotency: new RedisIdempotencyStore(redis, { prefix }),
+          reservations: reservationsOf(ledger),
+        },
         platform: { requestSessions: new RedisMandateSessionStore(redis, { prefix }), responseSessions: createRedisResponseSessionStore(redis, { prefix }) },
         // Redis expires nonces and sessions by itself.
         housekeeping: async () => {},

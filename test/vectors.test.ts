@@ -15,7 +15,7 @@ interface VectorFile {
   }[];
 }
 
-const file = JSON.parse(readFileSync(new URL('../test-vectors/plenipo-0.1.json', import.meta.url), 'utf8')) as VectorFile;
+const file = JSON.parse(readFileSync(new URL('../test-vectors/plenipo-0.2.json', import.meta.url), 'utf8')) as VectorFile;
 
 describe(`test vectors (${file.profile})`, () => {
   it('has vectors for both outcomes', () => {
