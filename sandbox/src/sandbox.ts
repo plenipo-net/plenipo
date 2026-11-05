@@ -183,7 +183,6 @@ export async function startSandbox(options: SandboxOptions = {}): Promise<Sandbo
         dir: auditSettings?.dir,
         retentionDays: auditSettings?.retentionDays,
         ipMode: auditSettings?.ip,
-        hashKey: auditToken,
         webhookUrl: auditSettings?.webhookUrl,
         webhookFormat: auditSettings?.webhookFormat,
         log: (line) => console.log(`[agent] ${line}`),

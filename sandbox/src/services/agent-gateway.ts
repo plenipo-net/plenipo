@@ -155,8 +155,11 @@ export async function startAgentGateway(opts: AgentGatewayOptions): Promise<Agen
   const auditDigest = opts.auditToken ? createHash('sha256').update(`Bearer ${opts.auditToken}`).digest() : undefined;
   /** Session ids are capabilities: the log keeps their first eight characters. */
   const short = (id: string | undefined) => (id ? id.slice(0, 8) : undefined);
-  /** The endpoint path as logged: the token never appears. */
-  const shownPath = (path: string) => (pathOk(path) ? '/mcp' : path.length > 120 ? `${path.slice(0, 120)}…` : path);
+  /** A path as logged: the token never appears, wherever it is in the path (OAuth discovery appends it to /.well-known/...). */
+  const shownPath = (path: string) => {
+    const p = opts.token ? path.split(opts.token).join('<token>') : path;
+    return p.length > 120 ? `${p.slice(0, 120)}…` : p;
+  };
   const callerOf = (req: Request) => audit.caller(clientIp(req), req.headers['user-agent']);
   const reject = (req: Request, status: number, reason: string, sid?: string) =>
     audit.record({ ev: 'reject', status, reason, method: req.method, ...(sid ? { sid: short(sid) } : {}), ...callerOf(req) });
@@ -324,7 +327,10 @@ export async function startAgentGateway(opts: AgentGatewayOptions): Promise<Agen
   if (auditDigest) {
     const admin = (req: Request) => {
       const got = String(req.headers.authorization ?? '');
-      if (!timingSafeEqual(createHash('sha256').update(got).digest(), auditDigest)) throw new HttpError(401, 'audit_token_required');
+      if (!timingSafeEqual(createHash('sha256').update(got).digest(), auditDigest)) {
+        audit.record({ ev: 'reject', status: 401, reason: got ? 'audit_token_wrong' : 'audit_token_missing', method: req.method, ...callerOf(req) });
+        throw new HttpError(401, 'audit_token_required');
+      }
     };
     const num = (v: string | null) => (v && /^\d+$/.test(v) ? Number(v) : undefined);
     router.get('/admin/mcp-audit', (_req, res) => sendHtml(res, auditPage()));
@@ -432,8 +438,9 @@ export async function startAgentGateway(opts: AgentGatewayOptions): Promise<Agen
     requests.sweep(now);
   }, 60_000);
   timer.unref();
-  void audit.sweep();
-  const auditTimer = setInterval(() => void audit.sweep(), 6 * 3600_000);
+  await audit.init();
+  void audit.sweep().catch((e: Error) => log(`audit sweep failed: ${e.message}`));
+  const auditTimer = setInterval(() => void audit.sweep().catch(() => {}), 6 * 3600_000);
   auditTimer.unref();
 
   const running = await listen(router, opts.host, opts.port);

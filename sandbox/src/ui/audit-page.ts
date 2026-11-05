@@ -132,7 +132,7 @@ export function auditPage(): string {
     });
   }
   function download(day) {
-    fetch('mcp-audit/raw/' + day, { headers: { authorization: 'Bearer ' + token } }).then(function (r) {
+    fetch('/admin/mcp-audit/raw/' + day, { headers: { authorization: 'Bearer ' + token } }).then(function (r) {
       if (!r.ok) throw new Error(r.status === 404 ? 'No log for ' + day + '.' : 'The server answered ' + r.status + '.');
       return r.blob();
     }).then(function (b) {
@@ -143,7 +143,7 @@ export function auditPage(): string {
   function load() {
     if (!token) return;
     $('err').textContent = '';
-    api('mcp-audit/summary' + range()).then(function (s) { $('data').hidden = false; render(s); }).catch(function (e) { $('err').textContent = e.message; });
+    api('/admin/mcp-audit/summary' + range()).then(function (s) { $('data').hidden = false; render(s); }).catch(function (e) { $('err').textContent = e.message; });
   }
   function show() {
     $('login').hidden = !!token; $('controls').hidden = !token;

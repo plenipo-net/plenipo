@@ -243,10 +243,15 @@ scanner. One JSON object per line:
 | `reject` | a request to the endpoint refused | `status`, `reason` (`unknown_session`, `no_session:tools/list`, `session_rate_limit`...) |
 | `probe` | any other path on the host, or the endpoint without its token | `method`, `path` |
 
-Nothing secret is written: the path token never appears, session ids are cut to eight characters,
-tool arguments to their names (a mandate's purpose is what a person typed), and addresses to their
-/24 (IPv6 /48) with a keyed hash that tells repeat callers apart (`SANDBOX_AUDIT_IP=full` keeps them
-whole, `none` drops them). The summary calls a session `listed` when it listed the tools and called
+Nothing secret is written: the path token never appears (wherever it sits in a path), session ids
+are cut to eight characters, tool arguments to their names (a mandate's purpose is what a person
+typed), and addresses to their /24 (IPv6 /48) with a keyed hash that tells repeat callers apart
+(`SANDBOX_AUDIT_IP=full` keeps them whole, `none` drops them). The hash key is random and kept in the
+directory (`.hash-key`), not derived from a token.
+
+Everything in an event comes from the network, so the log is bounded: strings and lists are clipped,
+refusals and probes are written up to 300 a minute and counted beyond (`dropped`), a day's file stops
+at 20 MB, and reading holds one line at a time. The summary calls a session `listed` when it listed the tools and called
 none, which is what a registry check does, and `used` when it called a tool.
 
 With `SANDBOX_AUDIT_DIR` the log goes to one file per UTC day (`mcp-YYYY-MM-DD.jsonl`), kept

@@ -3,7 +3,7 @@
  * scan of other paths; that it keeps no secret (path token, session ids, tool argument values, full
  * addresses); that its files survive a restart and expire; that only the audit token reads it.
  */
-import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -98,6 +98,44 @@ describe('audit helpers', () => {
     }
   });
 
+  it('bounds what clients send: field sizes, refusals and probes per minute, bytes per day', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'plenipo-audit-'));
+    try {
+      let now = Date.parse('2026-11-05T10:00:00Z');
+      const a = new McpAudit({ dir, hashKey: 'k', noisePerMinute: 3, maxDayBytes: 2000, now: () => now });
+      const e = a.record({ ev: 'tool', sid: 's1', tool: 'x'.repeat(5000), args: ['k'.repeat(100_000), ...Array.from({ length: 50 }, (_, i) => `a${i}`)], client: { ['n'.repeat(500)]: 'v' } })!;
+      expect(JSON.stringify(e).length).toBeLessThan(2000);
+      expect((e.args as string[]).length).toBe(20);
+      for (let i = 0; i < 5; i++) a.record({ ev: 'probe', method: 'GET', path: `/p${i}` });
+      now += 61_000;
+      a.record({ ev: 'probe', method: 'GET', path: '/later' });
+      for (let i = 0; i < 40; i++) a.record({ ev: 'rpc', sid: 's1', method: 'tools/list' });
+      await a.flush();
+      const s = await a.summary();
+      expect(s.totals.probes).toBe(4);
+      expect(s.totals.dropped).toBe(2);
+      expect((await readFile(join(dir, 'mcp-2026-11-05.jsonl'), 'utf8')).length).toBeLessThanOrEqual(2000);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps the hash key in the directory, not derived from a token', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'plenipo-audit-'));
+    try {
+      const a = new McpAudit({ dir });
+      await a.init();
+      const b = new McpAudit({ dir });
+      await b.init();
+      expect(a.caller('203.0.113.7', '').ip_hash).toBe(b.caller('203.0.113.7', '').ip_hash);
+      expect((await readFile(join(dir, '.hash-key'), 'utf8')).trim()).toMatch(/^[0-9a-f]{64}$/);
+      expect(await a.sweep()).toBe(0);
+      expect(await readdir(dir)).toContain('.hash-key');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('keeps working in memory when the directory cannot be written', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'plenipo-audit-'));
     try {
@@ -179,7 +217,16 @@ describe('audit of the hosted MCP gateway', () => {
     // No mandate approved yet: the bridge refuses before the bank.
     await use.client.callTool({ name: 'transfer', arguments: { payee: 'lumen-energia.example', amount_cents: 100 } });
 
-    for (const path of ['/.well-known/oauth-protected-resource', '/sse', '/mcp', '/mcp/not-the-token']) await fetch(`${sb.urls.agent}${path}`);
+    for (const path of ['/.well-known/oauth-protected-resource', '/sse', '/mcp', '/mcp/not-the-token', `/mcp/${TOKEN}/sse`, `/.well-known/oauth-protected-resource/mcp/${TOKEN}`]) {
+      await fetch(`${sb.urls.agent}${path}`);
+    }
+    // Names a client chooses cannot reach Object.prototype through the summary.
+    await use.client.callTool({ name: '__proto__', arguments: {} });
+    await fetch(`${sb.urls.agent}/mcp/${TOKEN}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', 'mcp-session-id': use.transport.sessionId!, 'mcp-protocol-version': '2025-06-18' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 99, method: '__proto__' }),
+    });
     const stale = await fetch(`${sb.urls.agent}/mcp/${TOKEN}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', 'mcp-session-id': '00000000-0000-0000-0000-000000000000' },
@@ -195,17 +242,25 @@ describe('audit of the hosted MCP gateway', () => {
     const used = sessions.find((x) => x.client === 'claude-test 2.1.0');
     expect(listed).toMatchObject({ kind: 'listed', ua: 'registry-check-agent/2.1' });
     expect(listed!.methods['tools/list']).toBe(1);
-    expect(used).toMatchObject({ kind: 'used', tools: ['request_mandate', 'transfer'] });
+    expect(used).toMatchObject({ kind: 'used', tools: ['request_mandate', 'transfer', '__proto__'] });
     expect(used!.demo).toMatch(/^[A-HJ-NP-Z2-9]{6}$/);
     expect(s.tools.request_mandate.ok).toBe(1);
     expect(s.tools.transfer.error).toBe(1);
     expect(s.rejects.unknown_session).toBe(1);
     const probes = (s.probes as Array<{ path: string }>).map((p) => p.path);
-    expect(probes).toEqual(expect.arrayContaining(['GET /.well-known/oauth-protected-resource', 'GET /sse', 'GET /mcp', 'GET /mcp/not-the-token']));
+    expect(probes).toEqual(
+      expect.arrayContaining(['GET /.well-known/oauth-protected-resource', 'GET /sse', 'GET /mcp', 'GET /mcp/not-the-token', 'GET /mcp/<token>/sse', 'GET /.well-known/oauth-protected-resource/mcp/<token>']),
+    );
+    expect(({} as Record<string, unknown>).calls).toBeUndefined();
+    expect('error' in {}).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(s.tools, '__proto__')).toBe(true);
+    expect(used!.methods.__proto__).toBe(1);
     expect(s.clients.map((c: { client: string }) => c.client)).toEqual(expect.arrayContaining(['registry-check 2.1.0', 'claude-test 2.1.0']));
 
-    const files = await readdir(dir);
+    const files = (await readdir(dir)).filter((f) => f.startsWith('mcp-'));
     expect(files).toHaveLength(1);
+    // The hash key sits beside the logs, readable by the process only.
+    expect((await stat(join(dir, '.hash-key'))).mode & 0o077).toBe(0);
     const raw = await readFile(join(dir, files[0]), 'utf8');
     expect(raw).not.toContain(TOKEN);
     expect(raw).not.toContain(purpose);

@@ -48,7 +48,10 @@ jobs:
       - name: Make sure the audit volume exists
         if: steps.token.outputs.ok == 'true'
         run: |
-          if flyctl volumes list --app plenipo-sandbox --json | grep -q '"plenipo_audit"'; then
+          set -euo pipefail
+          # A failed listing stops here: creating a second volume by mistake would leave one unused.
+          volumes=$(flyctl volumes list --app plenipo-sandbox --json)
+          if grep -q '"plenipo_audit"' <<<"$volumes"; then
             echo "volume plenipo_audit is there"
           else
             flyctl volumes create plenipo_audit --app plenipo-sandbox --region fra --size 1 --yes

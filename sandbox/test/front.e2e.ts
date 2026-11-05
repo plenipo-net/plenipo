@@ -67,6 +67,15 @@ describe('front door', () => {
     expect(init.body).toMatch(/public Plenipo sandbox/);
   });
 
+  it('resolves .. before deciding what is open, as the services will', async () => {
+    for (const path of ['/mcp/../scenarios', '/admin/mcp-audit/../../scenarios', '/mcp/%2e%2e/scenarios', '/api/demo/../../api/events']) {
+      const host = path.startsWith('/api') ? DOMAIN : `mcp.${DOMAIN}`;
+      expect((await get(host, path)).status, path).toBe(401);
+    }
+    // The audit page is open at the front door; it asks for its own token.
+    expect((await get(`mcp.${DOMAIN}`, '/admin/mcp-audit')).status).toBe(404);
+  });
+
   it('answers the health check on any host', async () => {
     const h = await get('fly-internal', '/healthz');
     expect(h.status).toBe(200);

@@ -91,7 +91,13 @@ export async function startFront(opts: FrontOptions): Promise<RunningFront> {
       .replace(/:\d+$/, '');
     const target = routes.get(host);
     if (!target) return fail(res, 404, 'unknown host');
-    const path = (req.url ?? '/').split('?')[0];
+    // The path as the services will route it: `..` and `%2e%2e` resolved, so an open prefix cannot lead elsewhere.
+    let path: string;
+    try {
+      path = new URL(req.url ?? '/', 'http://front.invalid').pathname;
+    } catch {
+      return fail(res, 400, 'bad request');
+    }
     if (!isOpen(host, path) && !authorized(req)) {
       return fail(res, 401, 'demo login required', { 'www-authenticate': 'Basic realm="Plenipo sandbox", charset="UTF-8"' });
     }
