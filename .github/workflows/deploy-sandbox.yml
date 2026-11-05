@@ -45,6 +45,14 @@ jobs:
         run: |
           curl -fsSL https://fly.io/install.sh | sh
           echo "$HOME/.fly/bin" >> "$GITHUB_PATH"
+      - name: Make sure the audit volume exists
+        if: steps.token.outputs.ok == 'true'
+        run: |
+          if flyctl volumes list --app plenipo-sandbox --json | grep -q '"plenipo_audit"'; then
+            echo "volume plenipo_audit is there"
+          else
+            flyctl volumes create plenipo_audit --app plenipo-sandbox --region fra --size 1 --yes
+          fi
       - name: Deploy
         if: steps.token.outputs.ok == 'true'
         run: flyctl deploy --app plenipo-sandbox --config sandbox/deploy/fly.toml --dockerfile sandbox/deploy/Dockerfile --ha=false --remote-only --wait-timeout 600

@@ -37,7 +37,8 @@ export function openPaths(domain: string): Record<string, string[]> {
     [domain]: ['/api/demo/'],
     [`platform.${domain}`]: ['/request/', '/response/', '/status/'],
     [`pid.${domain}`]: ['/status/', '/trust-anchor.pem'],
-    [`mcp.${domain}`]: ['/mcp', '/health'],
+    // The audit page and its API check their own bearer token.
+    [`mcp.${domain}`]: ['/mcp', '/health', '/admin/mcp-audit'],
   };
 }
 

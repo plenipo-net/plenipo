@@ -227,6 +227,50 @@ mandate, with the opening balance and every bill unpaid; delegated mandates use 
 of a public sandbox then never find each other's payments: two conversations paying "my electricity
 bill" both find it open.
 
+### Audit log of the MCP endpoint
+
+The gateway records who uses the endpoint (`src/services/mcp-audit.ts`), so that the owner of a public
+sandbox can tell a registry's periodic check from a person working through Claude, and both from a
+scanner. One JSON object per line:
+
+| `ev` | When | Fields beyond `ts`, address and user agent |
+| --- | --- | --- |
+| `initialize` | a client opens a session | `sid`, `client` (name and version it declares), `protocol`, `capabilities` |
+| `rpc` | a request on a session other than a tool call | `sid`, `method` (`tools/list`, `ping`...) |
+| `tool` | a tool call, after it ends | `sid`, `tool`, `args` (names only), `ok`, `ms`, `decision` and `code` for bank tools, `demo` |
+| `stream` | GET (notification stream) or DELETE (end) on a session | `sid`, `method` |
+| `session_closed` | the gateway closes a session | `sid`, `reason`, `used`, `seconds`, `demo` |
+| `reject` | a request to the endpoint refused | `status`, `reason` (`unknown_session`, `no_session:tools/list`, `session_rate_limit`...) |
+| `probe` | any other path on the host, or the endpoint without its token | `method`, `path` |
+
+Nothing secret is written: the path token never appears, session ids are cut to eight characters,
+tool arguments to their names (a mandate's purpose is what a person typed), and addresses to their
+/24 (IPv6 /48) with a keyed hash that tells repeat callers apart (`SANDBOX_AUDIT_IP=full` keeps them
+whole, `none` drops them). The summary calls a session `listed` when it listed the tools and called
+none, which is what a registry check does, and `used` when it called a tool.
+
+With `SANDBOX_AUDIT_DIR` the log goes to one file per UTC day (`mcp-YYYY-MM-DD.jsonl`), kept
+`SANDBOX_AUDIT_RETENTION_DAYS` (90); without it, the last 5000 events stay in memory until the restart.
+When the directory cannot be written the gateway says so and carries on in memory. With an audit token
+(`SANDBOX_AUDIT_TOKEN`, else `SANDBOX_ADMIN_TOKEN`) the log is served on the gateway's host:
+
+| URL | What |
+| --- | --- |
+| `/admin/mcp-audit` | a page that asks for the token and shows clients, sessions, tools, days, refusals and other paths |
+| `/admin/mcp-audit/summary?from=&to=` | the same as JSON (UTC days, default the last seven, at most 92) |
+| `/admin/mcp-audit/events?from=&to=&ev=&sid=&limit=` | events, newest first (`ev` takes a comma-separated list) |
+| `/admin/mcp-audit/raw/<YYYY-MM-DD>` | one day's file as written |
+
+The JSON endpoints need `Authorization: Bearer <token>`. `SANDBOX_AUDIT_WEBHOOK_URL` hears about each
+new client (a name, user agent and address not seen in the last day) and about the first tool call of
+each session, at most 30 times an hour: a JSON `{ text, content, event }` that Slack and Discord
+webhooks read, or with `SANDBOX_AUDIT_WEBHOOK_FORMAT=text` the line alone, for
+[ntfy](https://ntfy.sh) and the like.
+
+On Fly.io the log lives on the volume `plenipo_audit`, mounted at `/data` (`deploy/fly.toml`); the
+deploy workflow creates the volume when it is missing. The rest of the sandbox stays in memory and
+still starts clean every night.
+
 ## The LLM agent
 
 ```bash
@@ -283,6 +327,11 @@ the guard checks the invocation against the actual call regardless.
 | `SANDBOX_WATCH_URL` | the dashboard's `/demo/<code>` | Page where a person watches a session; the code is appended as `?code=` |
 | `SANDBOX_MAX_SESSIONS`, `SANDBOX_SESSION_IDLE_SECONDS` | 500, 7200 | Open gateway sessions, and when an idle one that called a tool is closed |
 | `SANDBOX_CLIENT_IP_HEADER` | none | Header with the client address set by the proxy in front (`fly-client-ip` on Fly.io) |
+| `SANDBOX_AUDIT_DIR` | none | Directory of the MCP audit log, one file per day; in memory without it |
+| `SANDBOX_AUDIT_TOKEN` | `SANDBOX_ADMIN_TOKEN` | Bearer token that reads the audit log at `/admin/mcp-audit`; without either, the log is not served |
+| `SANDBOX_AUDIT_RETENTION_DAYS` | 90 | Days of audit files kept |
+| `SANDBOX_AUDIT_IP` | `truncate` | Client addresses in the audit log: `truncate` (/24, /48), `full` or `none` |
+| `SANDBOX_AUDIT_WEBHOOK_URL`, `SANDBOX_AUDIT_WEBHOOK_FORMAT` | none, `json` | Notified of new clients and first tool calls; `text` sends the line alone |
 | `SANDBOX_DOMAIN`, `SANDBOX_FRONT_PORT`, `SANDBOX_FRONT_HOST` | none, none, `0.0.0.0` | Hosted: one public port dispatching by host name (`src/front.ts`) |
 | `SANDBOX_DEMO_LOGIN` | none | Hosted: `user:password` basic auth in front of everything a wallet, an MCP client or a showcase page does not need |
 | `SANDBOX_RESTART_AT` | none | Hosted: `HH:MM` UTC; the process exits then and the platform restarts it clean |

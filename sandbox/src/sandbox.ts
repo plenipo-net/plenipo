@@ -9,6 +9,7 @@ import { PERSONS } from './catalog.js';
 import { DEFAULT_IDENTITIES, DEFAULT_PORTS, type Identities, type SandboxOptions, type ServiceName } from './config.js';
 import { mappedStatusFetcher } from './fetcher.js';
 import { startAgentGateway, type AgentGatewayService } from './services/agent-gateway.js';
+import { McpAudit } from './services/mcp-audit.js';
 import { startBank, type BankService } from './services/bank.js';
 import { startDashboard, type DashboardService } from './services/dashboard.js';
 import { startPidProvider, type PidProviderService } from './services/pid-provider.js';
@@ -176,9 +177,21 @@ export async function startSandbox(options: SandboxOptions = {}): Promise<Sandbo
 
     let agentGateway: AgentGatewayService | undefined;
     if (options.agentGateway) {
-      const { publicScenarios, ...gw } = options.agentGateway;
+      const { publicScenarios, audit: auditSettings, ...gw } = options.agentGateway;
+      const auditToken = auditSettings?.token ?? options.adminToken;
+      const audit = new McpAudit({
+        dir: auditSettings?.dir,
+        retentionDays: auditSettings?.retentionDays,
+        ipMode: auditSettings?.ip,
+        hashKey: auditToken,
+        webhookUrl: auditSettings?.webhookUrl,
+        webhookFormat: auditSettings?.webhookFormat,
+        log: (line) => console.log(`[agent] ${line}`),
+      });
       agentGateway = await startAgentGateway({
         ...gw,
+        audit,
+        auditToken,
         scenarios: publicScenarios
           ? {
               endpoints: { platform: platform.url, wallet: wallet.url, bank: bank.url, dashboard: dashboard.url, dashboardToken: options.adminToken },
