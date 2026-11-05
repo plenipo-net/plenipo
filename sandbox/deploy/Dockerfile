@@ -17,9 +17,10 @@ ENV NODE_ENV=production \
     SANDBOX_HOST=0.0.0.0
 WORKDIR /app
 COPY --from=build --chown=node:node /app /app
-USER node
 WORKDIR /app/sandbox
 EXPOSE 4400 4401 4402 4403 4404 4405 8080
 HEALTHCHECK --interval=15s --timeout=3s --start-period=20s \
   CMD node -e "fetch('http://127.0.0.1:4403/api/info').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-CMD ["node_modules/.bin/tsx", "src/main.ts"]
+# Starts as root only to hand the audit directory (a volume, which mounts owned by root) to the node user,
+# then runs the sandbox as node.
+CMD ["sh", "-c", "if [ -n \"$SANDBOX_AUDIT_DIR\" ]; then mkdir -p \"$SANDBOX_AUDIT_DIR\" && chown node:node \"$SANDBOX_AUDIT_DIR\"; fi; export HOME=/home/node; exec setpriv --reuid=node --regid=node --init-groups node_modules/.bin/tsx src/main.ts"]

@@ -56,6 +56,22 @@ export interface AgentGatewaySettings {
   clientIpHeader?: string;
   /** Let visitors run the scripted scenarios through the gateway (GET /scenarios, POST /scenarios/<id>/run). */
   publicScenarios?: boolean;
+  /** The audit log of the MCP endpoint (src/services/mcp-audit.ts). */
+  audit?: AuditSettings;
+}
+
+export interface AuditSettings {
+  /** Directory of the daily log files; without it the log is in memory only. */
+  dir?: string;
+  /** Bearer token for /admin/mcp-audit; defaults to the admin token. */
+  token?: string;
+  retentionDays?: number;
+  /** `truncate` (default), `full` or `none`. */
+  ip?: 'truncate' | 'full' | 'none';
+  /** Hears about new clients and first tool calls: POST { text, content, event }. */
+  webhookUrl?: string;
+  /** `json` (default) or `text` (the line alone, for ntfy). */
+  webhookFormat?: 'json' | 'text';
 }
 
 export const DEFAULT_IDENTITIES: Identities = {
@@ -115,6 +131,14 @@ export function optionsFromEnv(env = process.env): SandboxOptions {
             idleSeconds: env.SANDBOX_SESSION_IDLE_SECONDS ? Number(env.SANDBOX_SESSION_IDLE_SECONDS) : undefined,
             clientIpHeader: env.SANDBOX_CLIENT_IP_HEADER || undefined,
             publicScenarios: env.SANDBOX_PUBLIC_SCENARIOS === '1',
+            audit: {
+              dir: env.SANDBOX_AUDIT_DIR || undefined,
+              token: env.SANDBOX_AUDIT_TOKEN || undefined,
+              retentionDays: env.SANDBOX_AUDIT_RETENTION_DAYS ? Number(env.SANDBOX_AUDIT_RETENTION_DAYS) : undefined,
+              ip: env.SANDBOX_AUDIT_IP === 'full' || env.SANDBOX_AUDIT_IP === 'none' ? env.SANDBOX_AUDIT_IP : undefined,
+              webhookUrl: env.SANDBOX_AUDIT_WEBHOOK_URL || undefined,
+              webhookFormat: env.SANDBOX_AUDIT_WEBHOOK_FORMAT === 'text' ? 'text' : undefined,
+            },
           }
         : undefined,
   };

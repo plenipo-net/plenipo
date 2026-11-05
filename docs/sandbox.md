@@ -87,4 +87,5 @@ with the low-level SDK server, so the bank's JSON schemas pass through unchanged
 - One process; restarting loses mandates and PIDs (the shared stores keep ledger, nonces and sessions).
 - PID issuance is a POST, not OpenID4VCI; the people and accounts are fictitious.
 - No run against walt.id or a phone has been done (see the level 2 status table).
-- The dashboard trusts the services it polls; it is an operator view, not an audit log.
+- The dashboard trusts the services it polls; it is an operator view, not an audit log. The hosted
+  MCP gateway keeps its own audit log of who connects and what they call (sandbox/README.md).

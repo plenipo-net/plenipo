@@ -74,7 +74,20 @@ export const BRIDGE_INSTRUCTIONS =
   'then mandate_status, then the bank tools. Never try to work around a DENY: report it to the person. ' +
   'Never say that something was paid unless a transfer under this mandate returned ALLOW; a bill missing from list_payees says nothing about who paid it.';
 
-export function createBridgeServer(core: BridgeCore, opts: { instructions?: string; onToolCall?: (name: string) => void } = {}): Server {
+/** What a tool call came to, for whoever watches the server (the hosted gateway's audit log). */
+export interface ToolOutcome {
+  ok: boolean;
+  ms: number;
+  /** For bank tools: the bank's decision. */
+  decision?: 'ALLOW' | 'DENY' | 'ERROR';
+  /** The denial code, e.g. PAYEE_NOT_ALLOWED. */
+  code?: string;
+}
+
+export function createBridgeServer(
+  core: BridgeCore,
+  opts: { instructions?: string; onToolCall?: (name: string) => void; onToolResult?: (name: string, args: Record<string, unknown>, outcome: ToolOutcome) => void } = {},
+): Server {
   const server = new Server(
     { name: 'plenipo-bank', version: '0.1.0' },
     {
@@ -96,22 +109,40 @@ export function createBridgeServer(core: BridgeCore, opts: { instructions?: stri
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
     const args = (req.params.arguments ?? {}) as Record<string, unknown>;
     opts.onToolCall?.(req.params.name);
+    const started = Date.now();
+    const own = OWN_TOOLS.some((t) => t.name === req.params.name);
+    let out: ToolText;
     try {
       switch (req.params.name) {
         case 'request_mandate':
-          return result(await core.requestMandate(args as never));
+          out = await core.requestMandate(args as never);
+          break;
         case 'mandate_status':
-          return result(await core.mandateStatus(args as { demo_code?: string }));
+          out = await core.mandateStatus(args as { demo_code?: string });
+          break;
         case 'revoke_mandate':
-          return result(await core.revokeMandate());
+          out = await core.revokeMandate();
+          break;
         case 'explain_last_decision':
-          return result(await core.explainLastDecision());
+          out = await core.explainLastDecision();
+          break;
         default:
-          return result(await core.callBankTool(req.params.name, args));
+          out = await core.callBankTool(req.params.name, args);
       }
     } catch (e) {
-      return result({ isError: true, text: (e as Error).message });
+      out = { isError: true, text: (e as Error).message };
     }
+    if (opts.onToolResult) {
+      const p = out.data?.plenipo as { decision?: string; code?: string } | undefined;
+      const deny = p?.decision === 'DENY';
+      opts.onToolResult(req.params.name, args, {
+        ok: !out.isError,
+        ms: Date.now() - started,
+        ...(own ? {} : { decision: deny ? 'DENY' : out.isError ? 'ERROR' : 'ALLOW' }),
+        ...(deny && p?.code ? { code: p.code } : {}),
+      });
+    }
+    return result(out);
   });
   // When the bank was not reachable at start, its tools appear later: tell the client to list again.
   server.oninitialized = () => {
