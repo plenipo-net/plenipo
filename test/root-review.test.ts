@@ -287,6 +287,19 @@ describe('R4: protected claims cannot be selectively disclosed', () => {
     ).rejects.toMatchObject({ code: 'ATTESTATION_INVALID', message: expect.stringMatching(/exp/) });
   });
 
+  it('a DCQL claim path cannot reach a prototype through the test wallet', async () => {
+    const w = await walletWithPid();
+    const iat = nowSeconds();
+    const sca = await laxIssue('https://lax-bank.test', { iat, exp: iat + DAY, vct: TEST_SCA_VCT, cnf: { jwk: w.holderJwk } }, []);
+    w.storeCredential(sca.token, { transactionDataTypes: ['urn:eudi:sca:emandate:1'] });
+    const m = createMandate({ agentJwk: agent.publicJwk, actions: ['payments.sepa'], counterparties: ['shop.example'], limits: { currency: 'EUR', total: 1000 } });
+    const req = await emandateRequest(m);
+    (req.params.dcql_query as any).credentials[1].claims = [{ path: ['__proto__', 'polluted'] }, { path: ['constructor', 'prototype'] }];
+    await w.respond(req.params);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    expect(Object.prototype.hasOwnProperty.call(Object.prototype, 'polluted')).toBe(false);
+  });
+
   it('a PID whose exp is disclosable is refused whether it is withheld or disclosed', async () => {
     const iat = nowSeconds() - 400 * DAY;
     for (const disclose of [['given_name', 'family_name'], ['given_name', 'family_name', 'exp']]) {

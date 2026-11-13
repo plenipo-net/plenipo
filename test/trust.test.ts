@@ -323,6 +323,17 @@ describe('CRL checking', () => {
     await expect(checkCertificateRevocation(chain, { policy: 'hard-fail', crls: clean }, now())).resolves.toBeDefined();
   });
 
+  it('reads PEM CRLs, and a malformed one in linear time', async () => {
+    const pem = (der: Uint8Array) => `-----BEGIN X509 CRL-----\n${Buffer.from(der).toString('base64')}\n-----END X509 CRL-----\n`;
+    const crls = [pem(await root.createCrl()), pem(await inter.createCrl({ revoked: [leaf.serialNumber] }))];
+    await expect(checkCertificateRevocation(chain, { policy: 'hard-fail', crls }, now())).rejects.toThrow(/revoked/);
+    // 768 KB of BEGIN markers and no END: about 19 s with the former lazy regex.
+    const hostile = '-----BEGIN X509 CRL-----'.repeat(32_000);
+    const started = Date.now();
+    await expect(checkCertificateRevocation(chain, { policy: 'hard-fail', crls: [hostile] }, now())).rejects.toThrow();
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
+
   it('caches verified results until nextUpdate', async () => {
     const { fetcher, calls } = memoryFetcher({ [ROOT_CRL]: await root.createCrl(), [INTER_CRL]: await inter.createCrl() });
     const cache = new RevocationCache();
