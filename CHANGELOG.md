@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+Sandbox
+- Audit log of the hosted MCP gateway: client name and version at `initialize`, every request and
+  tool call with its outcome, refusals, and requests to other paths, with no secret, tool argument
+  value or full address in it. Daily files on a volume on Fly.io (90 days), a token-protected page and
+  JSON at `/admin/mcp-audit`, and an optional webhook for new clients and first tool calls. See
+  sandbox/README.md, "Audit log of the MCP endpoint".
+- The sandbox image starts as root only to hand the audit directory to the `node` user.
+
 Security (from the first CodeQL scan)
 - Revocation: a PEM CRL supplied as a string is cut out with indexOf instead of a lazy regex, whose time
   grew with the square of a malformed input (768 KB of BEGIN markers took about 19 s).

@@ -1,8 +1,11 @@
 # The public sandbox on Fly.io: one machine, TLS at the Fly edge, the front door on port 8080 dispatching
 # by host name. From the repository root:
 #   fly deploy --config sandbox/deploy/fly.toml --dockerfile sandbox/deploy/Dockerfile --ha=false
-# Secrets (fly secrets set ...): SANDBOX_ADMIN_TOKEN, SANDBOX_MCP_TOKEN, optionally SANDBOX_DEMO_LOGIN=user:password.
-# Everything is in memory and the sandbox restarts clean every night: keep exactly one machine.
+# Secrets (fly secrets set ...): SANDBOX_ADMIN_TOKEN, SANDBOX_MCP_TOKEN, optionally SANDBOX_DEMO_LOGIN=user:password,
+# SANDBOX_AUDIT_TOKEN (reads the MCP audit log; defaults to the admin token), SANDBOX_AUDIT_WEBHOOK_URL.
+# Everything is in memory and the sandbox restarts clean every night: keep exactly one machine. Only the
+# MCP audit log lives on the volume plenipo_audit, which the deploy workflow creates when it is missing:
+#   fly volumes create plenipo_audit --app plenipo-sandbox --region fra --size 1
 app = "plenipo-sandbox"
 primary_region = "fra"
 
@@ -31,6 +34,14 @@ primary_region = "fra"
   # Where the request_mandate answer sends the person to watch the session live; the code is appended as ?code=.
   # Without it the link is the sandbox dashboard at /demo/<code>.
   SANDBOX_WATCH_URL = "https://plenipo.net/demo"
+  # The MCP audit log: one file per day on the volume, kept 90 days; addresses truncated.
+  SANDBOX_AUDIT_DIR = "/data/audit"
+  SANDBOX_AUDIT_RETENTION_DAYS = "90"
+
+[mounts]
+  source = "plenipo_audit"
+  destination = "/data"
+  initial_size = "1gb"
 
 [http_service]
   internal_port = 8080

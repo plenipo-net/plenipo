@@ -35,6 +35,8 @@ export class Router {
   private readonly routes: Route[] = [];
   /** Requests whose path starts with one of these prefixes are passed whole to the handler. */
   private readonly mounts: Array<{ prefix: string; handler: Handler }> = [];
+  /** Called before the 404 for a path that matches no route, e.g. to log it. */
+  private notFoundHook?: (req: Request) => void;
 
   get(path: string, h: Handler): this {
     return this.add('GET', path, h);
@@ -44,6 +46,10 @@ export class Router {
   }
   mount(prefix: string, h: Handler): this {
     this.mounts.push({ prefix, handler: h });
+    return this;
+  }
+  onNotFound(hook: (req: Request) => void): this {
+    this.notFoundHook = hook;
     return this;
   }
   private add(method: string, path: string, handler: Handler): this {
@@ -78,6 +84,7 @@ export class Router {
         await r.handler(req, res);
         return;
       }
+      if (!pathMatched) this.notFoundHook?.(req);
       sendJson(res, pathMatched ? 405 : 404, { error: pathMatched ? 'method_not_allowed' : 'not_found' });
     } catch (e) {
       if (res.headersSent) {
