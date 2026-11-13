@@ -35,7 +35,7 @@ export function openPaths(domain: string): Record<string, string[]> {
   return {
     // The dashboard page is behind the login; the per-session feeds are read by a showcase elsewhere.
     [domain]: ['/api/demo/'],
-    [`platform.${domain}`]: ['/request/', '/response/', '/status/'],
+    [`platform.${domain}`]: ['/request/', '/response/', '/status/', '/rp-ca.pem'],
     [`pid.${domain}`]: ['/status/', '/trust-anchor.pem'],
     // The audit page and its API check their own bearer token.
     [`mcp.${domain}`]: ['/mcp', '/health', '/admin/mcp-audit'],

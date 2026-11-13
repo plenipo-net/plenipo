@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+Sandbox
+- PID providers from ETSI TS 119 602 lists: `PLENIPO_PID_TRUSTED_LISTS` and
+  `PLENIPO_PID_TRUSTED_LIST_SIGNERS`, read at start and every 12 hours, the last good reading kept when a
+  list cannot be fetched. The public sandbox reads the EUDI list of test PID providers, so a PID from the
+  EU test issuer can be presented from the EUDI reference wallet.
+- The platform publishes the CA of its request object certificate at `/rp-ca.pem` and in `/api/info`,
+  and accepts `PLATFORM_RP_KEY`, `PLATFORM_RP_CHAIN` and `WALLET_RP_ANCHORS` as PEM text, so the
+  certificate can be a Fly secret that survives restarts.
+- Mandate requests carry `eudi_wallet_url` (`eudi-openid4vp://authorize?...`) next to the
+  `openid4vp://` link, and the request page offers a same-device link.
+
 ## 0.5.1 (13 November 2026)
 
 Security fixes from the first CodeQL scan, and dependency updates that close the open Dependabot

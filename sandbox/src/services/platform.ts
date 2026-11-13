@@ -8,7 +8,6 @@
  */
 import { randomUUID } from 'node:crypto';
 import { X509Certificate } from 'node:crypto';
-import { readFileSync } from 'node:fs';
 import { exportJWK, generateKeyPair, importPKCS8, type CryptoKey, type JWK } from 'jose';
 import QRCode from 'qrcode';
 import {
@@ -61,6 +60,11 @@ export interface PlatformOptions {
   walletUrl?: string;
   /** Request object signer for x509_san_dns; generated under a test CA when absent. */
   requestSigner?: { key: CryptoKey; x5c: string[] };
+  /**
+   * The CA of `requestSigner`, published at /rp-ca.pem so a wallet can be built to trust it (the EUDI
+   * reference wallet forks read it there). Ignored when the signer is generated: its own CA is published.
+   */
+  requestSignerAnchorPem?: string;
   /** Status list token `ttl` hint, in seconds. */
   statusTtlSeconds?: number;
   /** Ask for the response encrypted to the platform (direct_post.jwt). Default true. */
@@ -150,11 +154,11 @@ export interface PlatformService extends RunningServer {
   events: EventLog;
 }
 
-/** Loads a request object signer from PEM files (level 2: a certificate whose DNS SAN is the public host). */
-export async function loadRequestSigner(keyPath: string, chainPath: string): Promise<{ key: CryptoKey; x5c: string[] }> {
-  const key = await importPKCS8(readFileSync(keyPath, 'utf8'), 'ES256');
-  const pems = readFileSync(chainPath, 'utf8').match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g) ?? [];
-  if (pems.length === 0) throw new Error(`no certificate in ${chainPath}`);
+/** Builds a request object signer from PEM text (level 2: a certificate whose DNS SAN is the public host). */
+export async function loadRequestSigner(keyPem: string, chainPem: string): Promise<{ key: CryptoKey; x5c: string[] }> {
+  const key = await importPKCS8(keyPem, 'ES256');
+  const pems = chainPem.match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g) ?? [];
+  if (pems.length === 0) throw new Error('no certificate in the request signer chain');
   const x5c = pems.map((p) => Buffer.from(new X509Certificate(p).raw).toString('base64'));
   return { key, x5c };
 }
@@ -214,7 +218,7 @@ export async function startPlatform(opts: PlatformOptions): Promise<PlatformServ
   const clientId = `x509_san_dns:${clientDns}`;
 
   let signer = opts.requestSigner;
-  let rpAnchorPem: string | undefined;
+  let rpAnchorPem: string | undefined = opts.requestSigner ? opts.requestSignerAnchorPem : undefined;
   if (!signer) {
     const rpCa = await createTestCertificateAuthority('Sandbox Relying Party CA');
     // clientAuth EKU: walt.id checks the client-auth usage of x509_san_dns request object certificates.
@@ -312,10 +316,12 @@ export async function startPlatform(opts: PlatformOptions): Promise<PlatformServ
   function requestLinks(r: RequestRecord) {
     const requestUri = `${publicUrl}/request/${r.id}`;
     const authorizationUrl = authorizationRequestUrl(clientId, requestUri);
+    // The EUDI reference apps also answer their own scheme; Android matches its intent filter on a host.
+    const eudiUrl = authorizationRequestUrl(clientId, requestUri, 'eudi-openid4vp://authorize');
     const walletLink = opts.walletUrl
       ? `${opts.walletUrl}/authorize?${new URLSearchParams({ client_id: clientId, request_uri: requestUri })}`
       : undefined;
-    return { request_uri: requestUri, authorization_url: authorizationUrl, wallet_url: walletLink };
+    return { request_uri: requestUri, authorization_url: authorizationUrl, eudi_wallet_url: eudiUrl, wallet_url: walletLink };
   }
 
   function requestView(r: RequestRecord) {
@@ -519,11 +525,22 @@ export async function startPlatform(opts: PlatformOptions): Promise<PlatformServ
     sendJson(res, 200, {});
   });
   router.get('/status/mandates', async (_req, res) => sendText(res, 200, await publisher.token(), 'application/statuslist+jwt'));
+  // The CA of the request object certificate: a wallet that should open this platform's requests trusts it.
+  router.get('/rp-ca.pem', (_req, res) => {
+    if (!rpAnchorPem) throw new HttpError(404, 'no relying party CA is published');
+    sendText(res, 200, rpAnchorPem, 'application/x-pem-file');
+  });
   router.get('/events', (req, res) => sendJson(res, 200, eventsHandler(events)(req)));
 
   // ---- Platform API, used by agents and by the "my mandates" page ----
   router.get('/api/info', (_req, res) =>
-    sendJson(res, 200, { client_id: clientId, status_list: publisher.uri, status_signer: statusSigner, presets: PRESETS.map((p) => p.id) }),
+    sendJson(res, 200, {
+      client_id: clientId,
+      status_list: publisher.uri,
+      status_signer: statusSigner,
+      rp_ca: rpAnchorPem ? `${publicUrl}/rp-ca.pem` : undefined,
+      presets: PRESETS.map((p) => p.id),
+    }),
   );
   router.post('/api/requests', async (req, res) => {
     const body = await readFields(req);
@@ -635,7 +652,8 @@ export async function startPlatform(opts: PlatformOptions): Promise<PlatformServ
         head: r.state === 'pending' ? '<meta http-equiv="refresh" content="2">' : '',
         body: `<div class="grid cols-2"><div class="card"><h2>Approve in your wallet ${state}</h2>
 <p>Scan with an EUDI wallet, or open the sandbox wallet.</p><div style="background:#fff;display:inline-block;padding:8px;border-radius:8px">${qr}</div>
-<p class="row">${links.wallet_url ? `<a class="btn primary" href="${escapeHtml(links.wallet_url)}" target="_blank">Open in the sandbox wallet</a>` : ''}</p>
+<p class="row">${links.wallet_url ? `<a class="btn primary" href="${escapeHtml(links.wallet_url)}" target="_blank">Open in the sandbox wallet</a>` : ''}<a class="btn" href="${escapeHtml(links.authorization_url)}">Open in a wallet on this device</a></p>
+${rpAnchorPem ? `<p class="muted" style="font-size:13px">A Plenipo build of the EUDI reference wallet trusts this platform through <a href="/rp-ca.pem">rp-ca.pem</a>.</p>` : ''}
 <label>request_uri</label><code>${escapeHtml(links.request_uri)}</code><label>client_id</label><code>${escapeHtml(clientId)}</code></div>
 <div class="card"><h2>What the agent asks for</h2>${mandateDl(r.mandate)}</div></div>`,
       }),

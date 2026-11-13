@@ -290,12 +290,14 @@ certificate. Parsing is bounded in bytes, depth and node count.
 
 - XML lists (TS 119 612 LOTL and national TLs, XML binding of TS 119 602)
   are not loaded; see above.
-- The EU reference LoTE distribution points
-  (`https://trustedlist.serviceproviders.eudiw.dev/LOTE/json/*.jwt`) could not
-  be reached from the development environment, so loading has been tested
-  against lists produced by Plenipo's test operator and by `@owf/eudi-lote`,
-  not against a published list. Real lists may name the PID provider
-  differently from the SAN URI that Plenipo requires on the leaf.
+- The EU reference list of test PID providers
+  (`https://trustedlist.serviceproviders.eudiw.dev/LOTE/json/PIDProviders.jwt`)
+  loads and verifies (checked on 13 November 2026, sequence 20). It is signed
+  by a certificate issued by "PID Issuer CA 02", not by a self-signed list
+  signer: since `signerCertificates` pins the signer itself, pass that
+  certificate, not the CA. Whether the EU test PIDs name their `iss` in the
+  signing certificate, as Plenipo requires on the leaf, is still to be checked
+  with a real PID.
 - No OCSP stapling, no CRL delta processing, no AIA `caIssuers` chasing.
 - RSA-PSS signatures on CRLs and OCSP responses are not accepted.
 
