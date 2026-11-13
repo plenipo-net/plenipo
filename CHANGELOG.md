@@ -1,27 +1,36 @@
 # Changelog
 
-## Unreleased
+## 0.5.1 (13 November 2026)
+
+Security fixes from the first CodeQL scan, and dependency updates that close the open Dependabot
+alerts. No change to the profile, the API or the stores.
+
+Security
+- Revocation: a PEM CRL supplied as a string in `certificateRevocation.crls` is cut out with indexOf
+  instead of a lazy regex, whose time grew with the square of a malformed input (768 KB of BEGIN markers
+  took about 19 s). CRLs fetched from distribution points arrive as bytes and were not affected.
+- `plenipo/testing`: the test wallet builds its disclosure frame without a prototype and ignores the
+  claim names `__proto__`, `constructor` and `prototype`, so a DCQL query cannot pollute
+  `Object.prototype` in the process that runs it.
+- `jsonMediaType` reads the charset parameter without a regex. CodeQL flagged the pattern; it was not
+  slow in practice, and the new code accepts and refuses the same values.
+- The repository now runs CodeQL on every pull request and on main.
+
+Dependencies
+- Hono 4.13.18 and `@hono/node-server` 2.1.8, which the MCP SDK uses under its HTTP transport
+  (GHSA-jpvv-r467-5p4w, GHSA-qv5m-9pm6-hqp3 and five Hono advisories; none reachable through Plenipo's
+  gateways, which route requests themselves).
+- The four `@peculiar` packages to 3.x together, `@owf/token-status-list` 0.7, `@owf/eudi-lote` 0.6,
+  `@sd-jwt/sd-jwt-vc` 0.24, and the minor and patch group (#26, #32).
 
 Sandbox
 - Audit log of the hosted MCP gateway: client name and version at `initialize`, every request and
   tool call with its outcome, refusals, and requests to other paths, with no secret, tool argument
   value or full address in it. Daily files on a volume on Fly.io (90 days), a token-protected page and
   JSON at `/admin/mcp-audit`, and an optional webhook for new clients and first tool calls. See
-  sandbox/README.md, "Audit log of the MCP endpoint".
+  sandbox/README.md, "Audit log of the MCP endpoint" (#27).
 - The sandbox image starts as root only to hand the audit directory to the `node` user.
-
-Security (from the first CodeQL scan)
-- Revocation: a PEM CRL supplied as a string is cut out with indexOf instead of a lazy regex, whose time
-  grew with the square of a malformed input (768 KB of BEGIN markers took about 19 s).
-- `plenipo/testing`: the test wallet builds its disclosure frame without a prototype and ignores the
-  claim names `__proto__`, `constructor` and `prototype`, so a DCQL query cannot pollute
-  `Object.prototype` in the process that runs it.
-- `jsonMediaType` reads the charset parameter without a regex. CodeQL flagged the pattern; it was not
-  slow in practice, the new code accepts and refuses the same values.
-
-Maintenance
-- Dependencies: all open Dependabot updates, the four `@peculiar` packages to 3.x together, Hono 4.13.18
-  and `@hono/node-server` 2.1.8 (#26).
+- `@anthropic-ai/sdk` 1.7 (#28).
 
 ## 0.5.0 (26 October 2026)
 
