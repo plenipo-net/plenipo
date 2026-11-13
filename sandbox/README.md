@@ -315,6 +315,7 @@ the guard checks the invocation against the actual call regardless.
 | `PLENIPO_BANK_HOST` | `bank.sandbox.plenipo.test` | The bank's host: counterparty of reads and card operations, root of its audiences |
 | `SANDBOX_PUBLIC_URL_<SERVICE>` | the local URL | URLs announced to browsers and wallets (public host) |
 | `PLATFORM_RP_KEY`, `PLATFORM_RP_CHAIN`, `WALLET_RP_ANCHORS` | generated | Request-object certificate and its CA, from `npm run rp-cert`: file paths or the PEM text itself (a secret). The CA is published at `/rp-ca.pem` on the platform |
+| `SANDBOX_RP_DIR` | none | Without `PLATFORM_RP_KEY`: keep the request certificate and its CA in this directory, created on the first start (the public sandbox uses the volume) |
 | `PLENIPO_PID_TRUSTED_LISTS` | none | PID providers from ETSI TS 119 602 lists (LoTE): https URLs or files, comma separated, read at start and every 12 hours |
 | `PLENIPO_PID_TRUSTED_LIST_SIGNERS` | none | PEM files of the certificates allowed to sign those lists (required with the lists) |
 | `PLENIPO_PID_LIST_STATUS_ORIGINS` | none | https origins whose PID status lists are accepted under the listed providers (with `SANDBOX_ALLOW_PUBLIC_STATUS=1`) |

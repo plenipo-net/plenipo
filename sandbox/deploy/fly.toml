@@ -2,12 +2,10 @@
 # by host name. From the repository root:
 #   fly deploy --config sandbox/deploy/fly.toml --dockerfile sandbox/deploy/Dockerfile --ha=false
 # Secrets (fly secrets set ...): SANDBOX_ADMIN_TOKEN, SANDBOX_MCP_TOKEN, optionally SANDBOX_DEMO_LOGIN=user:password,
-# SANDBOX_AUDIT_TOKEN (reads the MCP audit log; defaults to the admin token), SANDBOX_AUDIT_WEBHOOK_URL,
-# and PLATFORM_RP_KEY, PLATFORM_RP_CHAIN, WALLET_RP_ANCHORS as PEM text (npm run rp-cert -- --dns
-# platform.sandbox.plenipo.net), so the request certificate survives the nightly restart and wallet builds
-# can trust its CA, published at https://platform.sandbox.plenipo.net/rp-ca.pem.
+# SANDBOX_AUDIT_TOKEN (reads the MCP audit log; defaults to the admin token), SANDBOX_AUDIT_WEBHOOK_URL.
 # Everything is in memory and the sandbox restarts clean every night: keep exactly one machine. Only the
-# MCP audit log lives on the volume plenipo_audit, which the deploy workflow creates when it is missing:
+# MCP audit log and the platform's request certificate live on the volume plenipo_audit, which the deploy
+# workflow creates when it is missing:
 #   fly volumes create plenipo_audit --app plenipo-sandbox --region fra --size 1
 app = "plenipo-sandbox"
 primary_region = "fra"
@@ -43,6 +41,9 @@ primary_region = "fra"
   # The MCP audit log: one file per day on the volume, kept 90 days; addresses truncated.
   SANDBOX_AUDIT_DIR = "/data/audit"
   SANDBOX_AUDIT_RETENTION_DAYS = "90"
+  # The request object certificate and its CA, created on the first start and kept across restarts: wallet
+  # builds trust the CA, published at https://platform.sandbox.plenipo.net/rp-ca.pem.
+  SANDBOX_RP_DIR = "/data/rp"
 
 [mounts]
   source = "plenipo_audit"

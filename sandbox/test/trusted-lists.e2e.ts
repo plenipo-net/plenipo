@@ -158,3 +158,25 @@ describe('a sandbox with listed PID providers and a fixed relying party certific
     }
   });
 });
+
+describe('a request certificate kept on disk', () => {
+  it('is created once, reused, and replaced when it names another host', async () => {
+    const { storedRpMaterial } = await import('../src/rp-store.js');
+    const { statSync } = await import('node:fs');
+    const rpDir = join(dir, 'rp');
+    const first = await storedRpMaterial(rpDir, 'https://platform.sandbox.plenipo.test');
+    expect(first.created).toBe(true);
+    expect(statSync(join(rpDir, 'rp-key.pem')).mode & 0o777).toBe(0o600);
+    const leaf = new X509Certificate(first.chainPem);
+    expect(leaf.checkHost('platform.sandbox.plenipo.test')).toBeTruthy();
+    expect(leaf.verify(new X509Certificate(first.caPem).publicKey)).toBe(true);
+    // The leaf lives about as long as its CA (five years), so the CA in wallet builds does not change.
+    expect(new Date(leaf.validTo).getTime() - Date.now()).toBeGreaterThan(4 * 365 * 24 * 3600_000);
+    const again = await storedRpMaterial(rpDir, 'https://platform.sandbox.plenipo.test');
+    expect(again.created).toBe(false);
+    expect(fp(again.caPem)).toBe(fp(first.caPem));
+    const other = await storedRpMaterial(rpDir, 'https://platform.other.test');
+    expect(other.created).toBe(true);
+    expect(fp(other.caPem)).not.toBe(fp(first.caPem));
+  });
+});

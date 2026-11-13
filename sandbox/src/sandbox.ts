@@ -17,6 +17,7 @@ import { loadRequestSigner, startPlatform, type PlatformService } from './servic
 import { createStores, storeOptionsFromEnv, type SandboxStores } from './services/stores.js';
 import { startWallet, type WalletService } from './services/wallet.js';
 import { pidListSettingsFromEnv, startPidListTrust, type PidListTrust } from './trusted-lists.js';
+import { storedRpMaterial } from './rp-store.js';
 
 export interface Sandbox {
   urls: Record<ServiceName, string>;
@@ -111,8 +112,16 @@ export async function startSandbox(options: SandboxOptions = {}): Promise<Sandbo
     let requestSigner;
     const rpKey = process.env.PLATFORM_RP_KEY;
     const rpChain = process.env.PLATFORM_RP_CHAIN;
-    const rpAnchors = process.env.WALLET_RP_ANCHORS ? pemOrFile(process.env.WALLET_RP_ANCHORS) : undefined;
-    if (rpKey && rpChain) requestSigner = await loadRequestSigner(pemOrFile(rpKey), pemOrFile(rpChain));
+    let rpAnchors = process.env.WALLET_RP_ANCHORS ? pemOrFile(process.env.WALLET_RP_ANCHORS) : undefined;
+    if (rpKey && rpChain) {
+      requestSigner = await loadRequestSigner(pemOrFile(rpKey), pemOrFile(rpChain));
+    } else if (process.env.SANDBOX_RP_DIR) {
+      // Kept on the volume: the same certificate after every restart, so wallet builds can trust its CA.
+      const stored = await storedRpMaterial(process.env.SANDBOX_RP_DIR, identities.platformOrigin);
+      if (stored.created) console.log(`[rp] created a request certificate and its CA in ${process.env.SANDBOX_RP_DIR}`);
+      requestSigner = await loadRequestSigner(stored.keyPem, stored.chainPem);
+      rpAnchors = stored.caPem;
+    }
     // The wallet's link is known only once it listens; the platform reads it lazily through this object.
     const walletRef: { url?: string } = {};
     const platform = await startPlatform({
