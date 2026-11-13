@@ -10,6 +10,9 @@ Sandbox
 - The platform publishes the CA of its request object certificate at `/rp-ca.pem` and in `/api/info`,
   and accepts `PLATFORM_RP_KEY`, `PLATFORM_RP_CHAIN` and `WALLET_RP_ANCHORS` as PEM text, so the
   certificate can be a Fly secret that survives restarts.
+- `SANDBOX_RP_DIR`: the request certificate and its CA are created on the first start and kept in that
+  directory, on the Fly volume for the public sandbox, so the CA that wallet builds trust stays the same
+  without handing a private key in as a secret.
 - Mandate requests carry `eudi_wallet_url` (`eudi-openid4vp://authorize?...`) next to the
   `openid4vp://` link, and the request page offers a same-device link.
 
