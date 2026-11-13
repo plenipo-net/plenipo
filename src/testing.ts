@@ -601,12 +601,16 @@ function ts12EmandateValid(p: any): boolean {
   return true;
 }
 
+/** Claim names a verifier sends: none of them may reach a prototype. */
+const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
 function claimsFrame(claims: Array<{ path: unknown[] }> | undefined): Record<string, unknown> {
-  const frame: Record<string, any> = {};
+  const frame: Record<string, any> = Object.create(null);
   for (const c of claims ?? []) {
     const [a, b] = c.path as string[];
+    if (typeof a !== 'string' || UNSAFE_KEYS.has(a) || (b !== undefined && (typeof b !== 'string' || UNSAFE_KEYS.has(b)))) continue;
     if (b === undefined) frame[a] = true;
-    else if (frame[a] !== true) (frame[a] ??= {})[b] = true;
+    else if (frame[a] !== true) (frame[a] ??= Object.create(null))[b] = true;
   }
   return frame;
 }
