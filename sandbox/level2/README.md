@@ -167,8 +167,15 @@ the issuer lets you enter test identity data. Credential offers can also be star
 For the bank and the platform to accept it (**to verify** with a real PID):
 
 - **Trust anchor.** The EU test PIDs are signed under the "PID Issuer CA 02" certificates of the EUDI
-  Wallet Reference Implementation (one per test country; walt.id ships three of them in its
-  `wallet-service.conf`). Put the right CA in a PEM file and set `PLENIPO_EXTRA_PID_ANCHORS`. Plenipo
+  Wallet Reference Implementation, one per test country. They are published in the list of test PID
+  providers, `https://trustedlist.serviceproviders.eudiw.dev/LOTE/json/PIDProviders.jwt` (read on 13
+  November 2026: sequence 20, seven issuance CAs for EU, CZ, EE, LU, NL, PT and UT, next update 28
+  March 2027). The list is signed by a certificate "PY PID Issuer DEV" issued by PID Issuer CA 02
+  (EU); Plenipo pins list signers rather than chaining them, so that certificate is in
+  `deploy/eudi-test/pid-providers-list-signer.pem`. Set
+  `PLENIPO_PID_TRUSTED_LISTS=https://trustedlist.serviceproviders.eudiw.dev/LOTE/json/PIDProviders.jwt`
+  and `PLENIPO_PID_TRUSTED_LIST_SIGNERS=deploy/eudi-test/pid-providers-list-signer.pem`, as the public
+  sandbox does; a single CA in a PEM file through `PLENIPO_EXTRA_PID_ANCHORS` works too. Plenipo
   also requires the signing certificate to **name the PID `iss`** (URI SAN equal to `iss`, or DNS
   SAN when `iss` is a bare https origin). If the EU test certificates do not, Plenipo refuses the PID
   with `PID_ISSUER_UNTRUSTED`, and the library needs an option for it (reported as an open point).

@@ -16,6 +16,7 @@ import { startPidProvider, type PidProviderService } from './services/pid-provid
 import { loadRequestSigner, startPlatform, type PlatformService } from './services/platform.js';
 import { createStores, storeOptionsFromEnv, type SandboxStores } from './services/stores.js';
 import { startWallet, type WalletService } from './services/wallet.js';
+import { pidListSettingsFromEnv, startPidListTrust, type PidListTrust } from './trusted-lists.js';
 
 export interface Sandbox {
   urls: Record<ServiceName, string>;
@@ -32,7 +33,14 @@ export interface Sandbox {
   statusCacheSeconds: number;
   adminToken?: string;
   stores: SandboxStores;
+  /** PID providers read from trusted lists, when PLENIPO_PID_TRUSTED_LISTS is set. */
+  pidLists?: PidListTrust;
   close(): Promise<void>;
+}
+
+/** A PEM value given inline (a Fly secret) or as a file path. */
+export function pemOrFile(v: string): string {
+  return v.trimStart().startsWith('-----BEGIN') ? v.replace(/\\n/g, '\n') : readFileSync(v, 'utf8');
 }
 
 /** Extra PID providers trusted by key, e.g. a walt.id issuer for level 2: a JSON file of [{ iss, jwk }]. */
@@ -90,12 +98,21 @@ export async function startSandbox(options: SandboxOptions = {}): Promise<Sandbo
     const statusFetcher = mappedStatusFetcher(routes, { allowPublicHttps: process.env.SANDBOX_ALLOW_PUBLIC_STATUS === '1' });
     const pidAnchors = [pid.anchorPem, ...extraAnchors()];
     const pidIssuers = extraPidIssuers();
-    const pidStatus = pidStatusTrust();
+    let pidStatus = pidStatusTrust();
+    const listSettings = pidListSettingsFromEnv();
+    let pidLists: PidListTrust | undefined;
+    if (listSettings) {
+      pidLists = await startPidListTrust(listSettings, pidAnchors, { statusOrigin: new URL(identities.pidIssuer).origin, anchors: [pid.anchorPem] });
+      started.push({ close: async () => pidLists!.close() });
+      if (pidStatus && pidLists.statusTrust) console.warn('[trusted lists] PLENIPO_PID_STATUS_TRUST_FILE is set: PLENIPO_PID_LIST_STATUS_ORIGINS is ignored');
+      pidStatus ??= pidLists.statusTrust;
+    }
 
     let requestSigner;
-    if (process.env.PLATFORM_RP_KEY && process.env.PLATFORM_RP_CHAIN) {
-      requestSigner = await loadRequestSigner(process.env.PLATFORM_RP_KEY, process.env.PLATFORM_RP_CHAIN);
-    }
+    const rpKey = process.env.PLATFORM_RP_KEY;
+    const rpChain = process.env.PLATFORM_RP_CHAIN;
+    const rpAnchors = process.env.WALLET_RP_ANCHORS ? pemOrFile(process.env.WALLET_RP_ANCHORS) : undefined;
+    if (rpKey && rpChain) requestSigner = await loadRequestSigner(pemOrFile(rpKey), pemOrFile(rpChain));
     // The wallet's link is known only once it listens; the platform reads it lazily through this object.
     const walletRef: { url?: string } = {};
     const platform = await startPlatform({
@@ -108,6 +125,7 @@ export async function startSandbox(options: SandboxOptions = {}): Promise<Sandbo
       pidStatusTrust: pidStatus,
       statusFetcher,
       requestSigner,
+      requestSignerAnchorPem: rpAnchors,
       bankHost: identities.bankHost,
       stores: stores.platform,
       get walletUrl() {
@@ -144,7 +162,7 @@ export async function startSandbox(options: SandboxOptions = {}): Promise<Sandbo
       pidUrl: pid.url,
       pidAdminToken: options.adminToken,
       persons: PERSONS,
-      rpTrustAnchors: platform.rpAnchorPem ? [platform.rpAnchorPem] : process.env.WALLET_RP_ANCHORS ? [readFileSync(process.env.WALLET_RP_ANCHORS, 'utf8')] : [],
+      rpTrustAnchors: platform.rpAnchorPem ? [platform.rpAnchorPem] : rpAnchors ? [rpAnchors] : [],
       strictClientId: options.strictClientId,
       bankHost: identities.bankHost,
     });
@@ -232,6 +250,7 @@ export async function startSandbox(options: SandboxOptions = {}): Promise<Sandbo
       statusCacheSeconds,
       adminToken: options.adminToken,
       stores,
+      pidLists,
       close: async () => {
         for (const s of started.reverse()) await s.close();
       },
