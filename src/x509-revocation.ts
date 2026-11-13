@@ -497,10 +497,16 @@ export async function checkCertificateRevocation(
   return report;
 }
 
+const CRL_BEGIN = '-----BEGIN X509 CRL-----';
+const CRL_END = '-----END X509 CRL-----';
+
+/** PEM or base64 to DER. With indexOf, not a lazy regex, whose time grows with the square of a malformed input. */
 function toDer(c: string | Uint8Array): Uint8Array {
   if (typeof c !== 'string') return c;
-  const m = /-----BEGIN X509 CRL-----([\s\S]+?)-----END X509 CRL-----/.exec(c);
-  return new Uint8Array(Buffer.from(m ? m[1] : c, 'base64'));
+  const start = c.indexOf(CRL_BEGIN);
+  const end = start < 0 ? -1 : c.indexOf(CRL_END, start + CRL_BEGIN.length);
+  const body = start >= 0 && end > start + CRL_BEGIN.length ? c.slice(start + CRL_BEGIN.length, end) : c;
+  return new Uint8Array(Buffer.from(body, 'base64'));
 }
 
 // --- OCSP -------------------------------------------------------------------------------------------------

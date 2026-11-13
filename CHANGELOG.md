@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+Security (from the first CodeQL scan)
+- Revocation: a PEM CRL supplied as a string is cut out with indexOf instead of a lazy regex, whose time
+  grew with the square of a malformed input (768 KB of BEGIN markers took about 19 s).
+- `plenipo/testing`: the test wallet builds its disclosure frame without a prototype and ignores the
+  claim names `__proto__`, `constructor` and `prototype`, so a DCQL query cannot pollute
+  `Object.prototype` in the process that runs it.
+- `jsonMediaType` reads the charset parameter without a regex. CodeQL flagged the pattern; it was not
+  slow in practice, the new code accepts and refuses the same values.
+
+Maintenance
+- Dependencies: all open Dependabot updates, the four `@peculiar` packages to 3.x together, Hono 4.13.18
+  and `@hono/node-server` 2.1.8 (#26).
+
 ## 0.5.0 (26 October 2026)
 
 Idempotent retries and a tighter revocation bound. Both came from questions after the public launch:

@@ -404,11 +404,19 @@ export function jsonMediaType(contentType: string | null): string | null {
   const [type, ...params] = contentType.split(';').map((s) => s.trim());
   const t = type.toLowerCase();
   if (!/^application\/([a-z0-9!#$&^_.-]+\+)?json$/.test(t)) return null;
-  for (const p of params) {
-    const m = /^charset\s*=\s*"?([^"]*)"?$/i.exec(p);
-    if (!m || m[1].toLowerCase() !== 'utf-8') return null;
-  }
+  for (const p of params) if (charsetOf(p)?.toLowerCase() !== 'utf-8') return null;
   return t;
+}
+
+/** The value of a `charset=` parameter, optionally quoted; undefined for any other parameter. No regex: the header comes from the network. */
+function charsetOf(param: string): string | undefined {
+  if (param.slice(0, 7).toLowerCase() !== 'charset') return undefined;
+  const rest = param.slice(7).trimStart();
+  if (!rest.startsWith('=')) return undefined;
+  let v = rest.slice(1).trimStart();
+  if (v.startsWith('"')) v = v.slice(1);
+  if (v.endsWith('"')) v = v.slice(0, -1);
+  return v.includes('"') ? undefined : v;
 }
 
 function makeContext(request: Request, url: URL, params: Record<string, string>, body: Uint8Array): RouteContext {
