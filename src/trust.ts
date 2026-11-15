@@ -35,6 +35,13 @@ export interface TrustConfig {
    */
   statusOrigins?: string[];
   /**
+   * For a status list origin, further identities whose certificate may sign the lists served from it, as
+   * `{ "https://status.example": ["https://issuer.example"] }`. For a status list service that hosts lists
+   * its issuers sign; without an entry the signing certificate must name the origin itself. The chain
+   * rules are unchanged.
+   */
+  statusSigners?: Record<string, string[]>;
+  /**
    * CRL and OCSP checking of x5c chains. Absent or `policy: 'off'` keeps the earlier behaviour: a revoked
    * certificate stays trusted until it expires. Needs `resolveSigningKeyAsync`.
    */
