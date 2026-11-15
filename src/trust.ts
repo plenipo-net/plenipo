@@ -234,7 +234,12 @@ export function verifyX5c(
       throw new TrustError('the signing certificate has a critical extended key usage that cannot be checked');
     }
   }
-  if (!namesIdentity(leaf, name)) throw new TrustError(`the signing certificate does not name ${name}`);
+  if (!namesIdentity(leaf, name)) {
+    // Say what the certificate does name: a deployment cannot otherwise tell which identity to configure.
+    const san = leaf.px.getExtension(x509.SubjectAlternativeNameExtension);
+    const names = san ? san.names.items.map((n) => `${n.type}:${n.value}`).join(', ') : 'no subject alternative name';
+    throw new TrustError(`the signing certificate does not name ${name} (it names ${names}; subject ${leaf.node.subject.replace(/\n/g, ', ')})`);
+  }
 
   const jwk = leaf.node.publicKey.export({ format: 'jwk' }) as JWK;
   if (jwk.kty !== 'EC' || jwk.crv !== 'P-256') throw new TrustError('the signing key must be EC P-256');
