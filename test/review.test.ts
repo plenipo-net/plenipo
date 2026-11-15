@@ -105,6 +105,25 @@ describe('1. a status list must be signed by the PID provider itself', () => {
     expect(wrongOrigin).toMatchObject({ code: 'PID_REVOKED' });
   });
 
+  it('accepts lists from a status origin signed by another identity only when statusSigners maps it', async () => {
+    const a = await createTestPidProvider('https://pid-a.example', { statusList: true });
+    const w = await walletFor(a);
+    const issuerKeys = await generateKeyPair('ES256', { extractable: true });
+    // A status service on the PID provider's origin serves a list signed by a different identity's key.
+    const sep = new StatusListPublisher({ uri: a.lastStatus!.status_list.uri, signingKey: issuerKeys.privateKey });
+    const base = {
+      trustedIssuers: [{ iss: 'https://issuer.example', jwk: await exportJWK(issuerKeys.publicKey) }],
+      statusOrigins: ['https://pid-a.example'],
+    };
+    const m = mandate();
+    const chain = { root: await w.approveMandate(m), delegations: [] };
+    const run = async (pidStatusTrust: object) =>
+      verifyAuthorization(chain, await inv(chain, m), { ...common(), trustedIssuers: [a.trusted], pidStatusTrust, statusFetcher: () => sep.token() });
+    expect(await run(base)).toMatchObject({ code: 'PID_REVOKED' });
+    expect(await run({ ...base, statusSigners: { 'https://other.example': ['https://issuer.example'] } })).toMatchObject({ code: 'PID_REVOKED' });
+    expect((await run({ ...base, statusSigners: { 'https://pid-a.example': ['https://issuer.example'] } })).decision).toBe('ALLOW');
+  });
+
   it('rejects a status list token without exp', async () => {
     const a = await createTestPidProvider('https://pid-a.example', { statusList: true });
     const w = await walletFor(a);

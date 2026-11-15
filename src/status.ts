@@ -77,6 +77,11 @@ export interface StatusCheckOptions {
    * with x5c the leaf certificate must name it.
    */
   signer: string;
+  /**
+   * Further identities accepted for the signer, tried after `signer`: a status list service that serves
+   * lists signed by their issuers (see `TrustConfig.statusSigners`). Never taken from the token.
+   */
+  alsoSigners?: string[];
   /** Origins the list may be fetched from. A URI outside them is refused before any network access. */
   allowedOrigins: string[];
   fetcher?: StatusFetcher;
@@ -209,6 +214,20 @@ export function isStatusReference(x: unknown): x is StatusReference {
  */
 export class StatusUnavailableError extends Error {}
 
+/** The signing key under `signer`, or else under the first of `alsoSigners` the certificate names. */
+async function resolveStatusSigner(header: Record<string, unknown>, opts: StatusCheckOptions) {
+  const names = [opts.signer, ...(opts.alsoSigners ?? []).filter((n) => n !== opts.signer)];
+  let firstError: unknown;
+  for (const name of names) {
+    try {
+      return await resolveSigningKeyAsync(header, name, opts.trust, opts.now);
+    } catch (e) {
+      firstError ??= e;
+    }
+  }
+  throw firstError;
+}
+
 export async function checkStatus(ref: StatusReference, opts: StatusCheckOptions): Promise<number> {
   const { uri, idx } = ref.status_list;
   const origin = httpsOrigin(uri);
@@ -225,7 +244,7 @@ export async function checkStatus(ref: StatusReference, opts: StatusCheckOptions
   }
   const maxBytes = opts.maxListBytes ?? DEFAULT_MAX_STATUS_LIST_BYTES;
   // The bound is part of the key: a list accepted under a larger bound is not served to a stricter check.
-  const key = JSON.stringify([trustId(opts.trust), opts.signer, uri, maxBytes]);
+  const key = JSON.stringify([trustId(opts.trust), opts.signer, opts.alsoSigners ?? [], uri, maxBytes]);
   const maxAge = opts.maxAgeSeconds;
   if (maxAge !== undefined && (typeof maxAge !== 'number' || !Number.isFinite(maxAge) || maxAge < 0)) {
     throw new Error('maxAgeSeconds must be a non-negative number');
@@ -242,7 +261,7 @@ export async function checkStatus(ref: StatusReference, opts: StatusCheckOptions
     const header = decodeProtectedHeader(token) as Record<string, unknown>;
     verifyStatusListJwtHeader(header);
     if (header.alg !== 'ES256') throw new Error('status list token must use ES256');
-    const signingKey = await resolveSigningKeyAsync(header, opts.signer, opts.trust, opts.now);
+    const signingKey = await resolveStatusSigner(header, opts);
     const { payload } = await jwtVerify(token, await importJWK(signingKey.jwk, 'ES256'), {
       algorithms: ['ES256'],
       currentDate: new Date(opts.now * 1000),
