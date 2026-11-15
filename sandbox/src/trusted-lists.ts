@@ -19,6 +19,8 @@ export interface PidListSettings {
   sources: string[];
   signerPems: string[];
   statusOrigins: string[];
+  /** Status origin → identities that may sign its lists besides the origin itself (TrustConfig.statusSigners). */
+  statusSigners?: Record<string, string[]>;
   refreshSeconds: number;
 }
 
@@ -39,12 +41,24 @@ export function pidListSettingsFromEnv(env: NodeJS.ProcessEnv = process.env): Pi
     }
     if (!u || u.protocol !== 'https:' || u.origin !== o.replace(/\/$/, '')) throw new Error(`PLENIPO_PID_LIST_STATUS_ORIGINS: ${o} is not an https origin`);
   }
+  // origin=identity pairs: lists served from the origin may be signed by a certificate naming the identity
+  // (the EU revocation service serves lists signed by the issuer's certificate).
+  const statusSigners: Record<string, string[]> = {};
+  for (const pair of split(env.PLENIPO_PID_LIST_STATUS_SIGNERS)) {
+    const [o, id] = pair.split('=').map((s) => s.trim());
+    const origin = (o ?? '').replace(/\/$/, '');
+    if (!statusOrigins.map((s) => s.replace(/\/$/, '')).includes(origin) || !id?.startsWith('https://')) {
+      throw new Error(`PLENIPO_PID_LIST_STATUS_SIGNERS: ${pair} must be origin=https://identity, with the origin in PLENIPO_PID_LIST_STATUS_ORIGINS`);
+    }
+    (statusSigners[origin] ??= []).push(id);
+  }
   const hours = Number(env.PLENIPO_PID_TRUSTED_LIST_REFRESH_HOURS ?? 12);
   if (!Number.isFinite(hours) || hours <= 0) throw new Error('PLENIPO_PID_TRUSTED_LIST_REFRESH_HOURS must be a positive number');
   return {
     sources,
     signerPems: signers.map((f) => readFileSync(f, 'utf8')),
     statusOrigins: statusOrigins.map((o) => o.replace(/\/$/, '')),
+    statusSigners,
     refreshSeconds: Math.round(hours * 3600),
   };
 }
@@ -113,7 +127,7 @@ export async function startPidListTrust(
 ): Promise<PidListTrust> {
   const base = anchors.length;
   const statusTrust: TrustConfig | undefined = settings.statusOrigins.length
-    ? { trustAnchors: [...own.anchors], statusOrigins: [own.statusOrigin, ...settings.statusOrigins] }
+    ? { trustAnchors: [...own.anchors], statusOrigins: [own.statusOrigin, ...settings.statusOrigins], ...(settings.statusSigners ? { statusSigners: settings.statusSigners } : {}) }
     : undefined;
   const statusBase = own.anchors.length;
   let last: PidListReading | undefined;
