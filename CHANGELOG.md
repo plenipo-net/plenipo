@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+First run with the EUDI reference wallet (Android): mandate approved with a PID from the EU test issuer,
+payments allowed and refused by the bank within it (#44).
+
+Verifier
+- `TrustConfig.statusSigners`: for a status list origin, further identities whose certificate may sign
+  its lists, for a status service that distributes lists signed by their issuer (the EU revocation
+  service). Opt-in per origin; chain and anchor rules unchanged.
+- A URI subject alternative name with a trailing slash names a bare-origin issuer, as the certificate of
+  `https://dev.issuer-backend.eudiw.dev` writes it (#50). Paths, ports, queries and fragments still never
+  match.
+- Errors name what was refused: the status list origin, and the names a signing certificate carries when
+  it does not name the expected identity.
+
 Sandbox
 - PID providers from ETSI TS 119 602 lists: `PLENIPO_PID_TRUSTED_LISTS` and
   `PLENIPO_PID_TRUSTED_LIST_SIGNERS`, read at start and every 12 hours, the last good reading kept when a
@@ -19,6 +32,8 @@ Sandbox
   (`SANDBOX_ALLOW_PUBLIC_STATUS`, `PLENIPO_PID_LIST_STATUS_ORIGINS`), and a rejected wallet response
   shows its detail in the platform feed and log. Found in the first run with the EUDI reference wallet
   (#44).
+- `PLENIPO_PID_LIST_STATUS_SIGNERS` (`origin=identity` pairs) sets `statusSigners` for the listed status
+  origins; the public sandbox accepts lists from `revocation.eudiw.dev` signed by `issuer.eudiw.dev`.
 
 ## 0.5.1 (13 November 2026)
 
