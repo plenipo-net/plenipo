@@ -424,7 +424,10 @@ export async function startPlatform(opts: PlatformOptions): Promise<PlatformServ
         }
         r.state = 'failed';
         r.error = e.code;
-        events.append('mandate_rejected', { request_id: r.id, mandate_id: r.mandate.id, code: e.code, reason: e.message });
+        // The detail (which origin, which check) is what makes a run with a real wallet debuggable; the sandbox's
+        // data is fictional, so it goes to the public feed as well as to the log.
+        console.warn(`[platform] wallet response rejected: ${e.code}: ${e.message}${e.detail ? ` (${e.detail})` : ''}`);
+        events.append('mandate_rejected', { request_id: r.id, mandate_id: r.mandate.id, code: e.code, reason: e.message, ...(e.detail ? { detail: e.detail } : {}) });
         throw new HttpError(400, 'invalid_request');
       }
       throw e;
