@@ -157,8 +157,13 @@ export type DenyCode =
   | 'ATTESTATION_INVALID'
   | 'ATTESTATION_REVOKED'
   | 'ROLE_EXCEEDED'
-  /** A status list or revocation source could not be fetched or verified. Still a denial; a retry may succeed. */
+  /** A status list or revocation source could not be fetched. Still a denial; a retry may succeed. */
   | 'STATUS_UNAVAILABLE'
+  /**
+   * A status list was referenced but cannot be trusted: its origin is not allowed, or the token does not
+   * verify (signer, signature, claims, expiry). The credential may be valid; its status is unknown.
+   */
+  | 'STATUS_UNTRUSTED'
   /** The idempotency key was already used for a different request. */
   | 'IDEMPOTENCY_CONFLICT'
   /** An attempt with this idempotency key is still running; a retry later may get its result. */
