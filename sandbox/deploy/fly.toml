@@ -38,6 +38,10 @@ primary_region = "fra"
   # PIDs of the EU test issuer (EUDI reference wallet): the test PID providers list, pinned to its signer.
   PLENIPO_PID_TRUSTED_LISTS = "https://trustedlist.serviceproviders.eudiw.dev/LOTE/json/PIDProviders.jwt"
   PLENIPO_PID_TRUSTED_LIST_SIGNERS = "deploy/eudi-test/pid-providers-list-signer.pem"
+  # Their status lists live on the EU test hosts, not in the sandbox: fetch them over the internet, only from
+  # these origins, signed by a certificate that names the origin and chains to a CA of the list above.
+  SANDBOX_ALLOW_PUBLIC_STATUS = "1"
+  PLENIPO_PID_LIST_STATUS_ORIGINS = "https://ec.dev.issuer.eudiw.dev,https://dev.issuer.eudiw.dev,https://issuer.eudiw.dev,https://dev.issuer-backend.eudiw.dev,https://issuer-backend.eudiw.dev"
   # The MCP audit log: one file per day on the volume, kept 90 days; addresses truncated.
   SANDBOX_AUDIT_DIR = "/data/audit"
   SANDBOX_AUDIT_RETENTION_DAYS = "90"
