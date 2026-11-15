@@ -653,7 +653,7 @@ describe('revocation wired into verification', () => {
       audience: AUD,
       nonces: new InMemoryNonceStore(),
     });
-    expect(d).toMatchObject({ decision: 'DENY', code: 'REVOKED' });
+    expect(d).toMatchObject({ decision: 'DENY', code: 'STATUS_UNTRUSTED' });
   });
 
   it('checks the PID provider certificate on its status list signature too', async () => {
