@@ -507,7 +507,7 @@ export async function verifyAuthorization(
           ...(maxStatusAge !== undefined ? { maxAgeSeconds: maxStatusAge } : {}),
         });
       } catch (e) {
-        throw new Deny(e instanceof StatusUnavailableError ? 'STATUS_UNAVAILABLE' : 'REVOKED', `status of mandate ${i} could not be verified`, i, (e as Error).message);
+        throw new Deny(e instanceof StatusUnavailableError ? 'STATUS_UNAVAILABLE' : 'STATUS_UNTRUSTED', `status of mandate ${i} could not be verified`, i, (e as Error).message);
       }
       if (status !== 0) throw new Deny('REVOKED', `mandate ${i} is ${status === 2 ? 'suspended' : 'revoked'} in its status list`, i);
     }

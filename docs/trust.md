@@ -267,7 +267,7 @@ certificate. Parsing is bounded in bytes, depth and node count.
   transaction data hash have verified.
 - For status list signers, inside `checkStatus` before the token signature is
   checked (the x5c path has validated by then). A failure denies with
-  `REVOKED` (mandates) or `PID_REVOKED` (PID status). The status list cache
+  `STATUS_UNTRUSTED`. The status list cache
   keys on the revocation policy, so a list accepted without a check is never
   served to a check that requires one.
 

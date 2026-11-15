@@ -97,6 +97,17 @@ interface RequestRecord {
   state: 'pending' | 'active' | 'refused' | 'failed';
   error?: string;
   createdAt: string;
+  /** When the wallet can no longer answer, in seconds since the epoch (the request object's `exp`). */
+  expiresAt: number;
+}
+
+/** A pending request past its expiry reads as expired; the stored state never changes for it. */
+function shownState(r: RequestRecord, now = nowSeconds()): RequestRecord['state'] | 'expired' {
+  return r.state === 'pending' && now > r.expiresAt ? 'expired' : r.state;
+}
+
+function utcTime(seconds: number): string {
+  return new Date(seconds * 1000).toISOString().slice(11, 16) + ' UTC';
 }
 
 interface AgentRecord {
@@ -299,6 +310,7 @@ export async function startPlatform(opts: PlatformOptions): Promise<PlatformServ
       params: req.params,
       state: 'pending',
       createdAt: new Date().toISOString(),
+      expiresAt: req.expiresAt,
     };
     requests.set(id, record);
     statusRefs.set(mandate.id, status);
@@ -325,7 +337,15 @@ export async function startPlatform(opts: PlatformOptions): Promise<PlatformServ
   }
 
   function requestView(r: RequestRecord) {
-    return { request_id: r.id, state: r.state, mandate_id: r.mandate.id, agent_id: r.agentId, error: r.error, ...requestLinks(r) };
+    return {
+      request_id: r.id,
+      state: shownState(r),
+      mandate_id: r.mandate.id,
+      agent_id: r.agentId,
+      error: r.error,
+      expires_at: new Date(r.expiresAt * 1000).toISOString(),
+      ...requestLinks(r),
+    };
   }
 
   function mandateView(m: MandateRecord) {
@@ -517,6 +537,11 @@ export async function startPlatform(opts: PlatformOptions): Promise<PlatformServ
       events.append('request_refetched', { request_id: r.id, mandate_id: r.mandate.id });
       throw new HttpError(410, 'request_already_used');
     }
+    // After its expiry the request is no longer served, for wallets that do not check the exp claim.
+    if (shownState(r) === 'expired') {
+      events.append('request_expired', { request_id: r.id, mandate_id: r.mandate.id });
+      throw new HttpError(410, 'request_expired');
+    }
     events.append('request_fetched', { request_id: r.id });
     sendText(res, 200, r.requestObject, 'application/oauth-authz-req+jwt');
   });
@@ -639,12 +664,19 @@ export async function startPlatform(opts: PlatformOptions): Promise<PlatformServ
     if (!r) throw new HttpError(404, 'unknown request');
     const links = requestLinks(r);
     const qr = await QRCode.toString(links.authorization_url, { type: 'svg', margin: 1, width: 240 });
+    const shown = shownState(r);
     const state =
-      r.state === 'pending'
+      shown === 'pending'
         ? '<span class="badge b-warn">waiting for the wallet</span>'
-        : r.state === 'active'
+        : shown === 'active'
           ? '<span class="badge b-allow">approved</span>'
-          : `<span class="badge b-deny">${escapeHtml(r.state)}${r.error ? ': ' + escapeHtml(r.error) : ''}</span>`;
+          : `<span class="badge b-deny">${escapeHtml(shown)}${r.error ? ': ' + escapeHtml(r.error) : ''}</span>`;
+    const expiry =
+      shown === 'pending'
+        ? `<p><strong>Approve before ${utcTime(r.expiresAt)}</strong> (${Math.max(0, Math.ceil((r.expiresAt - nowSeconds()) / 60))} minutes left). After that the wallet can no longer answer and the agent must ask again.</p>`
+        : shown === 'expired'
+          ? `<p>This request expired at ${utcTime(r.expiresAt)}: the agent must ask again.</p>`
+          : '';
     sendHtml(
       res,
       page({
@@ -652,9 +684,9 @@ export async function startPlatform(opts: PlatformOptions): Promise<PlatformServ
         service: 'platform',
         subtitle: 'Mandate request',
         nav: [['My mandates', '/']],
-        head: r.state === 'pending' ? '<meta http-equiv="refresh" content="2">' : '',
+        head: shown === 'pending' ? '<meta http-equiv="refresh" content="2">' : '',
         body: `<div class="grid cols-2"><div class="card"><h2>Approve in your wallet ${state}</h2>
-<p>Scan with an EUDI wallet, or open the sandbox wallet.</p><div style="background:#fff;display:inline-block;padding:8px;border-radius:8px">${qr}</div>
+${expiry}<p>Scan with an EUDI wallet, or open the sandbox wallet.</p><div style="background:#fff;display:inline-block;padding:8px;border-radius:8px">${qr}</div>
 <p class="row">${links.wallet_url ? `<a class="btn primary" href="${escapeHtml(links.wallet_url)}" target="_blank">Open in the sandbox wallet</a>` : ''}<a class="btn" href="${escapeHtml(links.authorization_url)}">Open in a wallet on this device</a></p>
 ${rpAnchorPem ? `<p class="muted" style="font-size:13px">A Plenipo build of the EUDI reference wallet trusts this platform through <a href="/rp-ca.pem">rp-ca.pem</a>.</p>` : ''}
 <label>request_uri</label><code>${escapeHtml(links.request_uri)}</code><label>client_id</label><code>${escapeHtml(clientId)}</code></div>
@@ -696,7 +728,7 @@ ${rpAnchorPem ? `<p class="muted" style="font-size:13px">A Plenipo build of the 
       .filter((r) => r.state !== 'active')
       .slice(-8)
       .reverse()
-      .map((r) => `<li><a href="/requests/${r.id}">${escapeHtml(agents.get(r.agentId)?.name)}</a> <span class="badge ${r.state === 'pending' ? 'b-warn' : 'b-deny'}">${r.state}</span> <span class="muted">${escapeHtml(r.error ?? '')}</span></li>`)
+      .map((r) => `<li><a href="/requests/${r.id}">${escapeHtml(agents.get(r.agentId)?.name)}</a> <span class="badge ${shownState(r) === 'pending' ? 'b-warn' : 'b-deny'}">${shownState(r)}</span> <span class="muted">${escapeHtml(r.error ?? '')}</span></li>`)
       .join('');
     return page({
       title: 'Agent Platform',

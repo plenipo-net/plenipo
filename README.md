@@ -13,8 +13,10 @@ Plenipo gives AI agents the same thing, with one difference: the powers are neve
 Every mandate has a scope, limits and an expiry, every sub-delegation can only narrow it,
 and the person can revoke it at any time.
 
-> Status: 0.5.1, experimental. The cryptography is real; wallets, PID providers and banks in
-> the examples and the sandbox are test doubles. The code went through security reviews by independent
+> Status: 0.6.0, experimental. The cryptography is real; the banks in the examples and the sandbox
+> are test doubles. The public sandbox accepts PIDs from the EU test issuer and has been run end to end
+> with walt.id Wallet API 2 and with Plenipo builds of the EUDI reference wallet on Android and iOS
+> ([docs/interop.md](docs/interop.md)). The code went through security reviews by independent
 > AI review agents (two rounds for 0.3, two for 0.5), and their findings are fixed (see
 > [CHANGELOG.md](CHANGELOG.md)); it has not yet been audited by an external security firm. Do not use it
 > to protect real money or real data yet.

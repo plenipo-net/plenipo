@@ -59,7 +59,7 @@ describe('1. a status list must be signed by the PID provider itself', () => {
       trustAnchors: [ca.anchorPem],
       statusFetcher: async () => forged,
     });
-    expect(d).toMatchObject({ decision: 'DENY', code: 'PID_REVOKED' });
+    expect(d).toMatchObject({ decision: 'DENY', code: 'STATUS_UNTRUSTED' });
   });
 
   it('rejects a list for A signed by another trusted issuer (trustedIssuers)', async () => {
@@ -75,7 +75,7 @@ describe('1. a status list must be signed by the PID provider itself', () => {
       trustedIssuers: [a.trusted, b.trusted],
       statusFetcher: async () => forged,
     });
-    expect(d).toMatchObject({ decision: 'DENY', code: 'PID_REVOKED' });
+    expect(d).toMatchObject({ decision: 'DENY', code: 'STATUS_UNTRUSTED' });
   });
 
   it('accepts a separate status signer only when configured, and only from its origins', async () => {
@@ -102,7 +102,7 @@ describe('1. a status list must be signed by the PID provider itself', () => {
       pidStatusTrust: { ...pidStatusTrust, statusOrigins: [STATUS] },
       statusFetcher: () => sep.token(),
     });
-    expect(wrongOrigin).toMatchObject({ code: 'PID_REVOKED' });
+    expect(wrongOrigin).toMatchObject({ code: 'STATUS_UNTRUSTED' });
   });
 
   it('accepts lists from a status origin signed by another identity only when statusSigners maps it', async () => {
@@ -119,8 +119,8 @@ describe('1. a status list must be signed by the PID provider itself', () => {
     const chain = { root: await w.approveMandate(m), delegations: [] };
     const run = async (pidStatusTrust: object) =>
       verifyAuthorization(chain, await inv(chain, m), { ...common(), trustedIssuers: [a.trusted], pidStatusTrust, statusFetcher: () => sep.token() });
-    expect(await run(base)).toMatchObject({ code: 'PID_REVOKED' });
-    expect(await run({ ...base, statusSigners: { 'https://other.example': ['https://issuer.example'] } })).toMatchObject({ code: 'PID_REVOKED' });
+    expect(await run(base)).toMatchObject({ code: 'STATUS_UNTRUSTED' });
+    expect(await run({ ...base, statusSigners: { 'https://other.example': ['https://issuer.example'] } })).toMatchObject({ code: 'STATUS_UNTRUSTED' });
     expect((await run({ ...base, statusSigners: { 'https://pid-a.example': ['https://issuer.example'] } })).decision).toBe('ALLOW');
   });
 
@@ -140,7 +140,7 @@ describe('1. a status list must be signed by the PID provider itself', () => {
       pidStatusTrust: { trustedIssuers: [{ iss: 'https://pid-a.example', jwk: await exportJWK(signer.publicKey) }] },
       statusFetcher: async () => noExp,
     });
-    expect(d).toMatchObject({ code: 'PID_REVOKED' });
+    expect(d).toMatchObject({ code: 'STATUS_UNTRUSTED' });
     expect(d.decision === 'DENY' && d.detail).toMatch(/exp/);
   });
 });
@@ -170,7 +170,7 @@ describe('2. no fetches to URLs chosen by a delegator', () => {
       mandateStatusTrust: { trustedIssuers: [{ iss: 'https://agents.example', jwk: await exportJWK(platform.publicKey) }] },
       statusFetcher: fetcher,
     });
-    expect(d).toMatchObject({ decision: 'DENY', code: 'REVOKED' });
+    expect(d).toMatchObject({ decision: 'DENY', code: 'STATUS_UNTRUSTED' });
     expect(fetcher).not.toHaveBeenCalled();
   });
 

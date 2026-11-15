@@ -186,7 +186,7 @@ describe('PID status', () => {
       trustedIssuers: [provider.trusted],
       statusFetcher: () => forged.token(),
     });
-    expect(d).toMatchObject({ decision: 'DENY', code: 'PID_REVOKED' });
+    expect(d).toMatchObject({ decision: 'DENY', code: 'STATUS_UNTRUSTED' });
   });
 
   it('works with x5c trust and a status list together', async () => {

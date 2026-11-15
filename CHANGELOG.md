@@ -1,11 +1,20 @@
 # Changelog
 
-## Unreleased
+## 0.6.0 (15 November 2026)
 
 First runs with the EUDI reference wallet, on Android and on iOS: mandate approved with a PID from the EU
 test issuer, payments allowed and refused by the bank within it (#44).
 
+Upgrading: a status list that cannot be trusted (origin not allowed, signer not trusted, signature,
+claims or expiry) now denies with the new code `STATUS_UNTRUSTED` (HTTP 401, `status_untrusted`) instead
+of `PID_REVOKED`, `REVOKED` or `ATTESTATION_REVOKED`. Those three now mean only that a verified list marks
+the credential revoked or suspended. Code that matches on them for monitoring or messages should add the
+new code. `MandateRequest` has a new member `expiresAt`.
+
 Verifier
+- `STATUS_UNTRUSTED` (#49): a status that cannot be determined is no longer reported as a revocation.
+  The run with the EU test PIDs showed why: a valid PID whose status list the sandbox did not accept was
+  reported as `PID_REVOKED`.
 - `TrustConfig.statusSigners`: for a status list origin, further identities whose certificate may sign
   its lists, for a status service that distributes lists signed by their issuer (the EU revocation
   service). Opt-in per origin; chain and anchor rules unchanged.
@@ -15,7 +24,16 @@ Verifier
 - Errors name what was refused: the status list origin, and the names a signing certificate carries when
   it does not name the expected identity.
 
+OpenID4VP
+- `createMandateRequest({ lifetimeSeconds })`, default 600: the signed request object carries `exp`, the
+  request and its session carry `expiresAt`, and `handleMandateResponse` refuses a response after it
+  (#51). Before, a wallet could open a 30-minute-old request, let the person approve and only then hear
+  that the relying party refused it.
+
 Sandbox
+- Requests show when they expire: on the request page ("Approve before 15:12 UTC"), as `expires_at` in the
+  API, and in the answer of the MCP tool `request_mandate`; `mandate_status` says when a request expired.
+  After the expiry the platform answers `request_uri` with 410.
 - PID providers from ETSI TS 119 602 lists: `PLENIPO_PID_TRUSTED_LISTS` and
   `PLENIPO_PID_TRUSTED_LIST_SIGNERS`, read at start and every 12 hours, the last good reading kept when a
   list cannot be fetched. The public sandbox reads the EUDI list of test PID providers, so a PID from the

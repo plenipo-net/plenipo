@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { compactDecrypt } from 'jose';
+import { compactDecrypt, decodeJwt, generateKeyPair } from 'jose';
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
   createInvocation,
@@ -756,7 +756,7 @@ describe('legal persons and role mandates', () => {
     const { root } = await obtain(await request(m), { wallet: w });
     const forged: StatusFetcher = async (uri) => (uri === ref.status_list.uri ? rogueRegister.statusList!.token() : statusFetcher(uri));
     const d = await verify(root, m, { statusFetcher: forged });
-    expect(d).toMatchObject({ decision: 'DENY', code: 'ATTESTATION_REVOKED' });
+    expect(d).toMatchObject({ decision: 'DENY', code: 'STATUS_UNTRUSTED' });
     if (d.decision === 'DENY') expect(d.reason).not.toMatch(/signature/);
   });
 
@@ -770,7 +770,7 @@ describe('legal persons and role mandates', () => {
       fetched++;
       return statusFetcher(uri);
     };
-    await expect(obtain(await request(m), { wallet: w, response: { statusFetcher: counting } })).rejects.toMatchObject({ code: 'ATTESTATION_REVOKED' });
+    await expect(obtain(await request(m), { wallet: w, response: { statusFetcher: counting } })).rejects.toMatchObject({ code: 'STATUS_UNTRUSTED' });
     expect(fetched).toBe(0);
   });
 
@@ -1016,3 +1016,27 @@ async function rootFromBody(body: Record<string, unknown>, req: MandateRequest):
     ...(Object.keys(presentations).length ? { presentations } : {}),
   };
 }
+
+describe('request lifetime (#51)', () => {
+  it('puts exp in the signed request object, 600 seconds by default', async () => {
+    const { privateKey } = await generateKeyPair('ES256');
+    const m = mandate();
+    const req = await request(m, { signer: { key: privateKey } });
+    const claims = decodeJwt(req.requestObject!);
+    expect(claims.exp).toBe((claims.iat as number) + 600);
+    expect(req.expiresAt).toBe(claims.exp);
+    expect(req.session.expiresAt).toBe(claims.exp);
+    const short = await request(m, { signer: { key: privateKey }, lifetimeSeconds: 120 });
+    expect(decodeJwt(short.requestObject!).exp).toBe(short.session.createdAt + 120);
+    await expect(request(m, { lifetimeSeconds: 0 })).rejects.toThrow(/lifetimeSeconds/);
+  });
+
+  it('refuses a response after the request expired, even within maxAgeSeconds', async () => {
+    const m = mandate();
+    const req = await request(m, { lifetimeSeconds: 60 });
+    await expect(obtain(req, { response: { now: req.session.createdAt + 61 } })).rejects.toMatchObject({ code: 'ROOT_INVALID' });
+    const fresh = await request(m, { lifetimeSeconds: 60 });
+    const { root } = await obtain(fresh, { response: { now: fresh.session.createdAt + 59 } });
+    expect(root).toBeDefined();
+  });
+});

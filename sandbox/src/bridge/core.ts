@@ -22,10 +22,19 @@ import { argsHash, chainHash, createInvocation, newIdempotencyKey, peekInvocatio
 import { META_KEY } from 'plenipo/mcp';
 import { BINDING_META_KEY, bindCall, invocationFields, isToolBinding, type ToolBinding } from '../binding.js';
 
+/** "The request expires at 15:12 UTC, in 10 minutes: ..." for an ISO time, or nothing. */
+function expiryLine(iso: string | undefined): string {
+  if (!iso) return '';
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return '';
+  const minutes = Math.max(0, Math.ceil((t - Date.now()) / 60000));
+  return `The request expires at ${new Date(t).toISOString().slice(11, 16)} UTC, in ${minutes} minutes: the person must approve before then, or you ask again. `;
+}
+
 export interface BridgeState {
   agent?: { privateJwk: JWK; publicJwk: JWK };
   /** The request waiting for the person's approval. */
-  pending?: { requestId: string; mandateId: string; walletUrl?: string; authorizationUrl: string; createdAt: string };
+  pending?: { requestId: string; mandateId: string; walletUrl?: string; authorizationUrl: string; createdAt: string; expiresAt?: string };
   /** The approved mandate and its chain. */
   mandate?: { id: string; chain: MandateChain; mandate: Mandate; approvedAt: string };
   last?: LastDecision;
@@ -169,6 +178,7 @@ export const DENY_EXPLANATIONS: Record<string, string> = {
   INVOCATION_MISMATCH: 'what was signed does not match the call the bank received',
   INVOCATION_STALE: 'the signed call is too old or from the future (clock problem)',
   STATUS_UNAVAILABLE: 'the bank could not check whether the mandate is still valid; trying again later may work',
+  STATUS_UNTRUSTED: 'a status list could not be verified (origin or signer not trusted), so the bank cannot tell whether the credential is still valid',
   MALFORMED: 'the call or its authorization could not be read',
   IDEMPOTENCY_IN_PROGRESS: 'the same call is still being processed by the bank; ask again in a few seconds',
   IDEMPOTENCY_UNRESOLVED: 'the bank does not know yet whether the earlier attempt of this call was executed; it must check before anything else happens',
@@ -317,7 +327,7 @@ export class BridgeCore {
     }
     const state = await this.store.load();
     const agent = await this.agent(state);
-    const req = await this.http<{ request_id: string; mandate_id: string; request_uri: string; authorization_url: string; wallet_url?: string }>('POST', '/api/requests', {
+    const req = await this.http<{ request_id: string; mandate_id: string; request_uri: string; authorization_url: string; wallet_url?: string; expires_at?: string }>('POST', '/api/requests', {
       agent_name: 'Claude (MCP bridge)',
       agent_jwk: agent.publicJwk,
       actions,
@@ -327,7 +337,14 @@ export class BridgeCore {
       purpose: input.purpose.trim().slice(0, 300),
       ...(input.emandate ? { transaction_data_type: 'emandate' } : {}),
     });
-    state.pending = { requestId: req.request_id, mandateId: req.mandate_id, walletUrl: req.wallet_url, authorizationUrl: req.authorization_url, createdAt: new Date().toISOString() };
+    state.pending = {
+      requestId: req.request_id,
+      mandateId: req.mandate_id,
+      walletUrl: req.wallet_url,
+      authorizationUrl: req.authorization_url,
+      createdAt: new Date().toISOString(),
+      ...(req.expires_at ? { expiresAt: req.expires_at } : {}),
+    };
     await this.saveState(state);
     await this.note('note', { text: `Claude asked for a mandate: ${input.purpose}`, request_id: req.request_id, mandate_id: req.mandate_id });
     const link = req.wallet_url ?? req.authorization_url;
@@ -335,6 +352,7 @@ export class BridgeCore {
       text:
         `Mandate requested. The person must now approve it in their wallet. Ask them to open this link (it shows exactly what you will be allowed to do) and approve:\n\n${link}\n\n` +
         `A phone wallet can scan the QR code at ${this.config.publicPlatformUrl ?? this.config.platformUrl}/requests/${req.request_id}.\n\n` +
+        expiryLine(req.expires_at) +
         'Tell the person plainly that approving gives you permission and pays nothing: nothing happens at the bank until they come back and tell you they approved. ' +
         'Then call mandate_status, and act only once the mandate is active.' +
         this.demoLine(),
@@ -345,6 +363,7 @@ export class BridgeCore {
         authorization_url: req.authorization_url,
         request_uri: req.request_uri,
         client_id: new URL(req.authorization_url).searchParams.get('client_id'),
+        ...(req.expires_at ? { expires_at: req.expires_at } : {}),
       },
     };
   }
@@ -367,7 +386,7 @@ export class BridgeCore {
       const r = await this.http<{ state: string; mandate_id: string; error?: string }>('GET', `/api/requests/${encodeURIComponent(state.pending.requestId)}`);
       if (r.state === 'pending') {
         return {
-          text: `Still waiting for the person to approve in the wallet: ${state.pending.walletUrl ?? state.pending.authorizationUrl}. Nothing has been paid.${this.demoLine()}`,
+          text: `Still waiting for the person to approve in the wallet: ${state.pending.walletUrl ?? state.pending.authorizationUrl}. ${expiryLine(state.pending.expiresAt)}Nothing has been paid.${this.demoLine()}`,
           data: { state: 'pending', ...(this.demoCode ? { demo_code: this.demoCode } : {}) },
         };
       }
@@ -381,6 +400,9 @@ export class BridgeCore {
       if (!m || (r.state !== 'active' && m.state !== 'active')) {
         delete state.pending;
         await this.saveState(state);
+        if (r.state === 'expired') {
+          return { isError: true, text: 'The mandate request expired before the person approved it. No mandate: call request_mandate again if the person still wants to.', data: { state: r.state } };
+        }
         return { isError: true, text: `The mandate request ended as ${r.state}${r.error ? ` (${r.error})` : ''}. No mandate: you cannot act at the bank.`, data: { state: r.state } };
       }
       // The bridge signs under this mandate only if it names the bridge's own key.

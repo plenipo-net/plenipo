@@ -63,6 +63,12 @@ export interface MandateRequestOptions {
   };
   /** Representation attestation request, used when the mandate has a legal person `principal`. */
   representation?: { vcts?: string[]; identityClaims?: string[] };
+  /**
+   * How long the request can be answered, in seconds. Default 600, the default `maxAgeSeconds` of
+   * `handleMandateResponse`. The signed request object carries it as `exp`, so a wallet that checks it
+   * refuses an expired request before the person reads and approves it.
+   */
+  lifetimeSeconds?: number;
 }
 
 /** What the platform keeps between the request and the response. Contains a private key: keep it server-side. */
@@ -75,6 +81,8 @@ export interface MandateRequestSession {
   responseMode: 'direct_post' | 'direct_post.jwt';
   decryptionKey?: CryptoKey;
   createdAt: number;
+  /** When the request expires (`createdAt` + `lifetimeSeconds`). Responses after it are refused. */
+  expiresAt?: number;
   /** The mandate, for e-mandate requests: the transaction data only carries its hash. */
   mandate?: Mandate;
   /** DCQL query ids besides `pid` whose presentations the response must contain. */
@@ -84,8 +92,10 @@ export interface MandateRequestSession {
 export interface MandateRequest {
   /** Authorization request parameters, as JSON. */
   params: Record<string, unknown>;
-  /** Signed request object, when a signer was given: serve it at the request_uri. */
+  /** Signed request object, when a signer was given: serve it at the request_uri until `expiresAt`. */
   requestObject?: string;
+  /** When the request expires, in seconds since the epoch: show it to the person, stop serving the request object after it. */
+  expiresAt: number;
   session: MandateRequestSession;
 }
 
@@ -93,6 +103,10 @@ export interface MandateRequest {
 export async function createMandateRequest(opts: MandateRequestOptions): Promise<MandateRequest> {
   const nonce = randomBytes(16).toString('base64url');
   const state = randomUUID();
+  const lifetime = opts.lifetimeSeconds ?? 600;
+  if (!Number.isSafeInteger(lifetime) || lifetime <= 0) throw new Error('lifetimeSeconds must be a positive integer');
+  const createdAt = Math.floor(Date.now() / 1000);
+  const expiresAt = createdAt + lifetime;
   const emandate = opts.transactionDataType === 'emandate';
   const em = opts.emandate ?? {};
   const bindTo = em.credential ?? SCA_QUERY_ID;
@@ -158,7 +172,7 @@ export async function createMandateRequest(opts: MandateRequestOptions): Promise
   let requestObject: string | undefined;
   if (opts.signer) {
     requestObject = await signCompactJwt(
-      { ...params, aud: 'https://self-issued.me/v2', iat: Math.floor(Date.now() / 1000) },
+      { ...params, aud: 'https://self-issued.me/v2', iat: createdAt, exp: expiresAt },
       { alg: 'ES256', typ: REQUEST_OBJECT_TYP, ...(opts.signer.x5c ? { x5c: opts.signer.x5c } : {}) },
       opts.signer.key,
     );
@@ -167,6 +181,7 @@ export async function createMandateRequest(opts: MandateRequestOptions): Promise
   return {
     params,
     requestObject,
+    expiresAt,
     session: {
       clientId: opts.clientId,
       nonce,
@@ -175,7 +190,8 @@ export async function createMandateRequest(opts: MandateRequestOptions): Promise
       mandateId: opts.mandate.id,
       responseMode: encrypt ? 'direct_post.jwt' : 'direct_post',
       decryptionKey,
-      createdAt: Math.floor(Date.now() / 1000),
+      createdAt,
+      expiresAt,
       ...(emandate ? { mandate: opts.mandate } : {}),
       ...(extraQueries.length ? { extraQueries } : {}),
     },
@@ -235,7 +251,9 @@ export async function handleMandateResponse(
   if (typeof sessionRetention === 'number' && sessionRetention < (opts.maxAgeSeconds ?? 600)) {
     throw new RootError('CONFIGURATION', 'the session store forgets responses before requests expire');
   }
-  if (opts.now - session.createdAt > (opts.maxAgeSeconds ?? 600)) throw new RootError('ROOT_INVALID', 'the request session has expired');
+  if (opts.now - session.createdAt > (opts.maxAgeSeconds ?? 600) || (typeof session.expiresAt === 'number' && opts.now > session.expiresAt)) {
+    throw new RootError('ROOT_INVALID', 'the request session has expired');
+  }
 
   let payload: Record<string, unknown> = body;
   if (session.responseMode === 'direct_post.jwt') {

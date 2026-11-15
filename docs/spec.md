@@ -62,6 +62,11 @@ Wallet over OpenID for Verifiable Presentations 1.0.
    JWT whose `transaction_data_hashes` contains hash(transaction data). `transaction_data_hashes_alg`,
    when present, MUST be `sha-256`.
 
+A request can be answered for a limited time (600 seconds by default). A signed request object carries the
+end as `exp`, so a wallet that checks it refuses an expired request before the person reads it; the agent
+platform stops serving the request object at `request_uri` after that time and refuses a response that
+arrives later.
+
 The root object is `{ "transaction_data": <string>, "presentation": <string> }`. A verifier MUST:
 
 - decode the transaction data strictly: unpadded base64url whose decoded bytes are exactly the canonical
@@ -184,6 +189,17 @@ with `Cache-Control: max-age=<bound>`, so HTTP caches on the way do not answer w
 verifier cannot tell how long a cache kept the copy it receives, so the bound holds only as far as the
 caches between it and the status list honour the request.
 
+A status check has three ways to fail, and the verifier keeps them apart:
+
+- the list was verified and the entry is not 0 (revoked or suspended): `PID_REVOKED` for the PID,
+  `REVOKED` for a mandate, `ATTESTATION_REVOKED` for an attestation;
+- the list could not be obtained (network error, HTTP error, size limit): `STATUS_UNAVAILABLE`;
+- the list sits on an origin the verifier does not accept, or was obtained but does not verify (signer
+  not trusted, signature, claims, expiry): `STATUS_UNTRUSTED`.
+
+All three are DENY. Only the first says something about the credential; the other two say that its status
+is unknown, and a verifier MUST NOT report them as a revocation.
+
 Checks that fetch anything over the network come after the invocation has been authenticated and
 scoped, so a caller without a valid invocation cannot make the verifier fetch URLs.
 
@@ -200,7 +216,7 @@ that failed (0 for the root):
 `EXPIRED`, `REVOKED`, `INVOCATION_SIGNATURE_INVALID`, `INVOCATION_MANDATE_MISMATCH`, `INVOCATION_STALE`,
 `AUDIENCE_MISMATCH`, `REPLAY`, `ACTION_NOT_PERMITTED`, `COUNTERPARTY_NOT_PERMITTED`, `CURRENCY_MISMATCH`,
 `LIMIT_PER_OPERATION`, `LIMIT_TOTAL`, `DISPLAY_MISMATCH`, `ROOT_POLICY`, `ATTESTATION_UNTRUSTED`,
-`ATTESTATION_INVALID`, `ATTESTATION_REVOKED`, `ROLE_EXCEEDED`, `STATUS_UNAVAILABLE`,
+`ATTESTATION_INVALID`, `ATTESTATION_REVOKED`, `ROLE_EXCEEDED`, `STATUS_UNAVAILABLE`, `STATUS_UNTRUSTED`,
 `IDEMPOTENCY_CONFLICT`, `IDEMPOTENCY_IN_PROGRESS`, `IDEMPOTENCY_UNRESOLVED`, `ALREADY_EXECUTED`,
 `INTERNAL`.
 
@@ -262,3 +278,7 @@ member `idem` and the idempotency rules (section 5.1, step 9 of section 6) are n
 section 6 describes the maximum age of status lists. Mandates, roots and delegations are unchanged
 (`v` stays `0.1`). A verifier of profile 0.1 ignores `idem`, which is why agents send it only to relying
 parties that keep idempotency keys.
+
+Later additions within profile 0.2 (library 0.6.0): the deny code `STATUS_UNTRUSTED`, which takes the
+place of `PID_REVOKED`, `REVOKED` and `ATTESTATION_REVOKED` when a status list cannot be trusted (section 6),
+and the `exp` of the request object (section 3). Neither changes what agents or wallets sign.

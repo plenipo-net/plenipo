@@ -127,7 +127,8 @@ reorder what the person reads.
      data hash, and carries TS12 `jti`, `response_mode` and `amr` with two categories;
    - the SCA attestation is tied to the PID holder (see below);
    - it must carry a status list entry (`emandate.requireScaStatus`, default true), which is checked
-     (`ATTESTATION_REVOKED`, or `STATUS_UNAVAILABLE` when the list cannot be fetched);
+     (`ATTESTATION_REVOKED`, `STATUS_UNAVAILABLE` when the list cannot be fetched, `STATUS_UNTRUSTED` when it
+     cannot be trusted);
    - when `scaTrust.certificateRevocation` is set, the PSP certificate path is checked with CRL/OCSP
      (`ATTESTATION_UNTRUSTED` when revoked or not verifiable);
    - in `verifyAuthorization` both checks run after the invocation and scope checks, in
@@ -307,7 +308,8 @@ configured (otherwise `CONFIGURATION`):
    covered, counterparties within the role's, same currency, effective per-operation limit and total not
    above the role's (a role total requires a mandate total), delegation depth not above
    `max_delegation_depth`, and the mandate window inside the role window and before the attestation `exp`.
-8. The status list is checked (`ATTESTATION_REVOKED` when revoked or suspended, `STATUS_UNAVAILABLE` when it
+8. The status list is checked (`ATTESTATION_REVOKED` when revoked or suspended, `STATUS_UNTRUSTED` when it does
+   not verify or its origin is not allowed, `STATUS_UNAVAILABLE` when it
    cannot be fetched). It must be signed for the attestation issuer under the same trust and served from the
    issuer's origin (or `trust.statusOrigins`). With `representation.trust.certificateRevocation`, the register
    certificate path is also checked with CRL/OCSP (`ATTESTATION_UNTRUSTED`). In `verifyAuthorization` these
