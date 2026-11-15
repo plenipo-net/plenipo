@@ -7,7 +7,7 @@ import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type Anthropic from '@anthropic-ai/sdk';
 import { generateKeyPair, SignJWT } from 'jose';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createTestCertificateAuthority } from 'plenipo/testing';
 import { SandboxAgentClient } from '../src/agent/client.js';
 import { runLlmAgent, type CreateMessage } from '../src/agent/llm.js';
@@ -192,6 +192,26 @@ describe('the sandbox surface', () => {
     expect((await post()).status).toBe(409);
     expect(await env.client.requestState(req.request_id)).toMatchObject({ state: 'active' });
     expect((await fetch(req.request_uri)).status).toBe(410);
+  });
+
+  it('the platform shows when a request expires and stops serving it afterwards (#51)', async () => {
+    const req = await env.client.requestMandate({ agentName: 'Expiry target', preset: 'utilities' });
+    const view = (await env.client.requestState(req.request_id)) as { state: string; expires_at?: string };
+    expect(view.state).toBe('pending');
+    const expires = Date.parse(view.expires_at!);
+    expect(expires - Date.now()).toBeGreaterThan(590_000);
+    expect(expires - Date.now()).toBeLessThanOrEqual(600_000);
+    const page = await (await fetch(`${sb.urls.platform}/requests/${req.request_id}`)).text();
+    expect(page).toContain('Approve before');
+    const realNow = Date.now.bind(Date);
+    const later = vi.spyOn(Date, 'now').mockImplementation(() => realNow() + 601_000);
+    try {
+      expect((await fetch(req.request_uri)).status).toBe(410);
+      expect(await env.client.requestState(req.request_id)).toMatchObject({ state: 'expired' });
+    } finally {
+      later.mockRestore();
+    }
+    expect((await fetch(req.request_uri)).status).toBe(200);
   });
 
   it('two responses racing: one approves, the other is refused without undoing it', async () => {
