@@ -213,9 +213,10 @@ fetched over https only, without redirects, within 5 seconds and up to 1 MB.
   or a certificate under the anchors that names the PID `iss`) and the list
   must be on the origin of the PID `iss`. A different status signer is accepted
   only through `pidStatusTrust`, which names who may sign and from which
-  origins. A revoked or suspended PID, or a list that was obtained but does not
-  verify, denies with `PID_REVOKED`; a list that cannot be obtained at all
-  denies with `STATUS_UNAVAILABLE`. A PID must carry a status entry
+  origins. A revoked or suspended PID denies with `PID_REVOKED`; a list that
+  cannot be obtained at all denies with `STATUS_UNAVAILABLE`; a list on an
+  origin that is not allowed, or one that was obtained but does not verify,
+  denies with `STATUS_UNTRUSTED`. A PID must carry a status entry
   (`requirePidStatus`, default true; otherwise `ROOT_INVALID`), read only from
   the issuer-signed plain text, because a status the provider made selectively
   disclosable could be withheld by the holder of a revoked PID. Providers that
