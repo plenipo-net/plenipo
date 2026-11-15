@@ -33,7 +33,7 @@ matter of registering the type, not of changing the protocol.
 | --- | --- | --- |
 | walt.id Wallet API 2 | Transaction data types are configurable through transaction data profiles. | **Works.** With the profile in `sandbox/level2/waltid/config`, Wallet API 2 (`stable`, October 2026) approved a `plenipo_mandate` and the bank enforced it, end to end, on 25 October 2026 (`sandbox/level2/README.md`). |
 | EUDI reference wallet (Android) | Wallet core 0.32.0 accepts custom types (`TransactionDataType.raw`); the reference app declines what its consent screen cannot show. | **Works.** The fork [plenipo-net/eudi-wallet-android](https://github.com/plenipo-net/eudi-wallet-android) declares `plenipo_mandate` and shows every limiting field. On 15 November 2026 (`plenipo-v0.1.2`, Android emulator) it approved a mandate with a PID from the EU test issuer, and the bank allowed and refused payments within it (#44, `sandbox/level2/README.md`). |
-| EUDI reference wallet (iOS) | The wallet kit hands custom types over as raw JSON. | Fork [plenipo-net/eudi-wallet-ios](https://github.com/plenipo-net/eudi-wallet-ios) with the same consent rows; simulator run next (#44). |
+| EUDI reference wallet (iOS) | The wallet kit hands custom types over as raw JSON. | **Works.** The fork [plenipo-net/eudi-wallet-ios](https://github.com/plenipo-net/eudi-wallet-ios) shows the same consent rows. On 15 November 2026 (`plenipo-v0.1.2`, iOS simulator) it approved a mandate with a PID from the EU test issuer, and the bank allowed and refused payments within it (#44, `sandbox/level2/README.md`). |
 | IT-Wallet (app IO) | No public support for custom transaction data types. | Needs agreement with the scheme operator; see the roadmap. |
 
 ## Testing against a wallet
