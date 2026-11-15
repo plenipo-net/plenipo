@@ -131,6 +131,18 @@ describe('direct signing certificates as anchors', () => {
     expect(() => verifyX5c(noSig.x5c, [pem(noSig.certificate)], now(), 'https://pid.example')).toThrow(/digitalSignature/);
   });
 
+  it('accepts a URI SAN with a trailing slash for a bare-origin issuer, and nothing looser', async () => {
+    const slash = await ca.issueLeaf('https://pid.example', { san: [{ type: 'url', value: 'https://pid.example/' }] });
+    expect(verifyX5c(slash.x5c, [pem(slash.certificate)], now(), 'https://pid.example').via).toBe('x5c');
+    expect(verifyX5c(slash.x5c, [pem(slash.certificate)], now(), 'https://pid.example/').via).toBe('x5c');
+    for (const value of ['https://pid.example/x', 'https://pid.example:8443/', 'https://pid.example/?a=1', 'https://pid.example/#f', 'http://pid.example/', 'https://other.example/']) {
+      const leaf = await ca.issueLeaf('https://pid.example', { san: [{ type: 'url', value }] });
+      expect(() => verifyX5c(leaf.x5c, [pem(leaf.certificate)], now(), 'https://pid.example'), value).toThrow(/does not name/);
+    }
+    const path = await ca.issueLeaf('https://pid.example', { san: [{ type: 'url', value: 'https://pid.example/' }] });
+    expect(() => verifyX5c(path.x5c, [pem(path.certificate)], now(), 'https://pid.example/tenant')).toThrow(/does not name/);
+  });
+
   it('rejects an expired listed leaf', async () => {
     const leaf = await ca.issueLeaf('https://pid.example', { notAfter: new Date(Date.now() + 60_000) });
     expect(() => verifyX5c(leaf.x5c, [pem(leaf.certificate)], now() + 3600, 'https://pid.example')).toThrow(/not valid now/);
