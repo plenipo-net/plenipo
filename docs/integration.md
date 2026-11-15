@@ -460,6 +460,7 @@ The tables are exported (`DENY_PROBLEMS`, `GATEWAY_PROBLEMS`,
 | `ACTION_NOT_PERMITTED`, `COUNTERPARTY_NOT_PERMITTED`, `CURRENCY_MISMATCH` | 403 | authorization |
 | `LIMIT_PER_OPERATION`, `LIMIT_TOTAL` | 403 | authorization |
 | `ROOT_POLICY`, `ROLE_EXCEEDED` | 403 | authorization |
+| `STATUS_UNTRUSTED` | 401 | authentication |
 | `STATUS_UNAVAILABLE` | 503 | infrastructure |
 | `INTERNAL` | 500 | infrastructure |
 
@@ -472,9 +473,10 @@ Infrastructure failures have their own codes:
 
 - `STATUS_UNAVAILABLE` (503, with `Retry-After`): a status list could not be
   obtained at all (network error, HTTP error, size limit). A list that was
-  obtained but failed verification (wrong signer, origin outside the
-  configuration, bad signature, expired) is not an outage: it stays `REVOKED`,
-  `PID_REVOKED` or `ATTESTATION_REVOKED`, 401.
+  obtained but failed verification (wrong signer, bad signature, expired), or
+  that sits on an origin outside the configuration, is not an outage:
+  `STATUS_UNTRUSTED`, 401. `REVOKED`, `PID_REVOKED` and `ATTESTATION_REVOKED`
+  mean only that a verified list marks the credential revoked or suspended.
 - `INTERNAL` (500): an unexpected exception aborted verification, typically a
   ledger, nonce store or registry that failed. Any amount reserved before the
   failure is released.
@@ -515,7 +517,7 @@ the version of the implementation guidelines the bank implements.
 | `expired`, `not_yet_valid` | `CONSENT_EXPIRED` |
 | `revoked`, `pid_revoked`, `root_invalid`, `tx_data_mismatch`, `delegation_*`, `attenuation_violation` | `CONSENT_INVALID` |
 | `invocation_signature_invalid`, `invocation_mandate_mismatch`, `audience_mismatch`, `invocation_stale` | `TOKEN_INVALID` |
-| `pid_issuer_untrusted` | `CERTIFICATE_INVALID` |
+| `pid_issuer_untrusted`, `status_untrusted` | `CERTIFICATE_INVALID` |
 | `action_not_permitted`, `counterparty_not_permitted`, `currency_mismatch`, `limit_*`, `lifetime_policy`, `policy_denied` | `SERVICE_BLOCKED` |
 | `invocation_mismatch` | `FORMAT_ERROR` (or a bank-specific code) |
 | `replay` | bank-specific code: no direct equivalent |
