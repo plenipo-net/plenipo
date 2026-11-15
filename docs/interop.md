@@ -29,10 +29,11 @@ the type refuses the request instead of silently signing something the person
 has not seen. That is the right behaviour, and it means interoperability is a
 matter of registering the type, not of changing the protocol.
 
-| Wallet | Status (October 2026) | What to do |
+| Wallet | Status (November 2026) | What to do |
 | --- | --- | --- |
 | walt.id Wallet API 2 | Transaction data types are configurable through transaction data profiles. | **Works.** With the profile in `sandbox/level2/waltid/config`, Wallet API 2 (`stable`, October 2026) approved a `plenipo_mandate` and the bank enforced it, end to end, on 25 October 2026 (`sandbox/level2/README.md`). |
-| EUDI reference wallet (Android wallet core) | Transaction data for SD-JWT VC presentations was merged on the `release/0.31.0` branch in September 2026. It is opt-in: the wallet declares the types it accepts, and the documented example is `QES_APPROVAL`. | Check in the code whether custom types can be declared; if they can, declare `plenipo_mandate` in a fork of the reference app and render the mandate on the consent screen. If not, propose the type upstream. |
+| EUDI reference wallet (Android) | Wallet core 0.32.0 accepts custom types (`TransactionDataType.raw`); the reference app declines what its consent screen cannot show. | **Works.** The fork [plenipo-net/eudi-wallet-android](https://github.com/plenipo-net/eudi-wallet-android) declares `plenipo_mandate` and shows every limiting field. On 15 November 2026 (`plenipo-v0.1.2`, Android emulator) it approved a mandate with a PID from the EU test issuer, and the bank allowed and refused payments within it (#44, `sandbox/level2/README.md`). |
+| EUDI reference wallet (iOS) | The wallet kit hands custom types over as raw JSON. | Fork [plenipo-net/eudi-wallet-ios](https://github.com/plenipo-net/eudi-wallet-ios) with the same consent rows; simulator run next (#44). |
 | IT-Wallet (app IO) | No public support for custom transaction data types. | Needs agreement with the scheme operator; see the roadmap. |
 
 ## Testing against a wallet
@@ -51,8 +52,19 @@ certificate's CA with the wallet under test, as you would for any verifier.
 The test wallet in `plenipo/testing` follows the same rules as a real one: it
 refuses transaction data types it does not know, honours `response_mode`,
 encrypts to the key in `client_metadata`, and binds the key binding JWT to
-`client_id` and `nonce`. It is what the test suite uses. A run against a real
-device cannot be done from this repository's CI and has not been done yet.
+`client_id` and `nonce`. It is what the test suite uses. Runs against real
+wallets cannot be done from this repository's CI; they are recorded in
+`sandbox/level2/README.md` (walt.id on 25 October, the EUDI reference wallet on
+Android on 15 November 2026).
+
+What a real run with EU test PIDs needs from the verifier, learned on 15 November:
+
+- the EU list of test PID providers as trust source, with its signer pinned;
+- the status list origins the PIDs point to (`https://revocation.eudiw.dev`),
+  and, for that origin, the issuer identity whose certificate signs its lists
+  (`TrustConfig.statusSigners`);
+- a request that the person approves within the session lifetime (10 minutes by
+  default): the request object does not yet tell the wallet (#51).
 
 ## Towards a standard type
 
