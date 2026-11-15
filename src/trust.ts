@@ -126,8 +126,9 @@ function checkCa(c: Cert, role: string, intermediatesBelow: number): void {
 }
 
 /**
- * True when the leaf names `name`: exactly as a URI subject alternative name, or by its DNS name when
- * `name` is a bare https origin (no port, path, query or fragment). Paths never match by DNS, so one
+ * True when the leaf names `name`: exactly as a URI subject alternative name, or, when `name` is a bare
+ * https origin (no port, path, query or fragment), by that origin as a URI with or without the trailing slash
+ * or by its DNS name. Paths never match by DNS, so one
  * tenant's certificate on a shared host cannot sign for another tenant's issuer URL.
  */
 function namesIdentity(c: Cert, name: string): boolean {
@@ -143,6 +144,9 @@ function namesIdentity(c: Cert, name: string): boolean {
   }
   const bareOrigin = u.protocol === 'https:' && !u.port && (u.pathname === '/' || u.pathname === '') && !u.search && !u.hash;
   if (!bareOrigin || name.replace(/\/$/, '') !== u.origin) return false;
+  // For a bare https origin the empty path and "/" are the same URI (RFC 3986, section 6.2.3), and some
+  // issuers write the SAN with the slash: accept exactly those two spellings, nothing else.
+  if (items.some((n) => n.type === 'url' && (n.value === u.origin || n.value === `${u.origin}/`))) return true;
   return items.some((n) => n.type === 'dns' && n.value.toLowerCase() === u.hostname);
 }
 
