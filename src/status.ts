@@ -212,7 +212,17 @@ export class StatusUnavailableError extends Error {}
 export async function checkStatus(ref: StatusReference, opts: StatusCheckOptions): Promise<number> {
   const { uri, idx } = ref.status_list;
   const origin = httpsOrigin(uri);
-  if (!origin || !opts.allowedOrigins.includes(origin)) throw new Error('status list origin is not allowed');
+  if (!origin || !opts.allowedOrigins.includes(origin)) {
+    // Name what was refused: without it a deployment cannot tell which origin to allow.
+    let shown = '(not a URI)';
+    try {
+      const u = new URL(uri);
+      shown = `${u.protocol}//${u.host}`;
+    } catch {
+      // keep the placeholder
+    }
+    throw new Error(`status list origin ${shown} is not allowed`);
+  }
   const maxBytes = opts.maxListBytes ?? DEFAULT_MAX_STATUS_LIST_BYTES;
   // The bound is part of the key: a list accepted under a larger bound is not served to a stricter check.
   const key = JSON.stringify([trustId(opts.trust), opts.signer, uri, maxBytes]);
