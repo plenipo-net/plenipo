@@ -67,6 +67,7 @@ export const DENY_PROBLEMS: Readonly<Record<DenyCode, ProblemSpec>> = Object.fre
   ATTESTATION_REVOKED: spec(401, 'attestation_revoked', 'An attestation is revoked or suspended', 'authentication'),
   ROLE_EXCEEDED: spec(403, 'role_exceeded', 'The mandate exceeds the representative role', 'authorization'),
   STATUS_UNAVAILABLE: spec(503, 'status_unavailable', 'A status list could not be checked', 'infrastructure'),
+  STATUS_UNTRUSTED: spec(401, 'status_untrusted', 'A status list could not be verified', 'authentication'),
   IDEMPOTENCY_CONFLICT: spec(422, 'idempotency_conflict', 'The idempotency key was used for a different request', 'request'),
   IDEMPOTENCY_IN_PROGRESS: spec(409, 'idempotency_in_progress', 'An attempt with this idempotency key is still running', 'conflict'),
   IDEMPOTENCY_UNRESOLVED: spec(409, 'idempotency_unresolved', 'The outcome of an earlier attempt with this idempotency key is not known yet', 'conflict'),
