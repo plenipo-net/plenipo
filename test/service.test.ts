@@ -764,7 +764,7 @@ describe('error mapping', () => {
   const codes: DenyCode[] = Object.keys(DENY_PROBLEMS) as DenyCode[];
 
   it('covers every DenyCode with a stable lowercase code and a type URI', () => {
-    expect(codes).toHaveLength(37);
+    expect(codes).toHaveLength(38);
     const seen = new Set<string>();
     for (const c of codes) {
       const p = DENY_PROBLEMS[c];
@@ -786,6 +786,7 @@ describe('error mapping', () => {
     // A list that was obtained but did not verify stays a denial of the credential, not an outage.
     expect(deny('REVOKED', 'status of mandate 0 could not be verified', 'wrong signer')).toMatchObject({ status: 401, code: 'revoked' });
     expect(deny('STATUS_UNAVAILABLE', 'PID status could not be verified', 'timeout')).toMatchObject({ status: 503, code: 'status_unavailable' });
+    expect(deny('STATUS_UNTRUSTED', 'PID status could not be verified', 'status list origin https://x.example is not allowed')).toMatchObject({ status: 401, code: 'status_untrusted' });
     expect(deny('INTERNAL', 'the request could not be processed', 'ledger down')).toMatchObject({ status: 500, code: 'internal' });
     expect(deny('MALFORMED', 'chain must have root and delegations')).toMatchObject({ status: 400, code: 'malformed' });
     expect(deny('NOPE' as DenyCode, 'x')).toMatchObject({ status: 500, code: 'processing_error' });
