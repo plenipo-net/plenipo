@@ -619,7 +619,7 @@ export async function checkPidStatus(ref: StatusReference, pidIss: string, opts:
   const origin = httpsOrigin(ref.status_list.uri);
   const custom = opts.pidStatusTrust;
   const check = custom
-    ? { trust: custom, signer: origin ?? '', allowedOrigins: statusOriginsOf(custom) }
+    ? { trust: custom, signer: origin ?? '', alsoSigners: (origin && custom.statusSigners?.[origin]) || [], allowedOrigins: statusOriginsOf(custom) }
     : { trust: opts as TrustConfig, signer: pidIss, allowedOrigins: [httpsOrigin(pidIss)].filter((o): o is string => !!o) };
   let status: number;
   try {
