@@ -41,6 +41,7 @@ export class RootError extends Error {
       | 'ATTESTATION_REVOKED'
       | 'ROLE_EXCEEDED'
       | 'STATUS_UNAVAILABLE'
+      | 'STATUS_UNTRUSTED'
       | 'REPLAY',
     message: string,
     /** Internal detail for logs; never send it to the caller. */
@@ -579,7 +580,8 @@ export async function checkAttestationCertificates(c: DeferredCertificateCheck, 
 /**
  * Checks the status of an SCA or representation attestation. The list must be signed for the attestation
  * issuer under the same trust that accepted the attestation, and served from that issuer's origin unless
- * the trust names `statusOrigins`. Throws RootError ATTESTATION_REVOKED unless the status is valid.
+ * the trust names `statusOrigins`. Throws RootError ATTESTATION_REVOKED when the verified list marks it revoked
+ * or suspended, STATUS_UNAVAILABLE or STATUS_UNTRUSTED when the status cannot be determined.
  */
 export async function checkAttestationStatus(
   d: DeferredStatus,
@@ -598,7 +600,7 @@ export async function checkAttestationStatus(
       ...(opts.maxStatusAgeSeconds !== undefined ? { maxAgeSeconds: opts.maxStatusAgeSeconds } : {}),
     });
   } catch (e) {
-    throw new RootError(e instanceof StatusUnavailableError ? 'STATUS_UNAVAILABLE' : 'ATTESTATION_REVOKED', `${d.label} status could not be verified`, (e as Error).message);
+    throw new RootError(e instanceof StatusUnavailableError ? 'STATUS_UNAVAILABLE' : 'STATUS_UNTRUSTED', `${d.label} status could not be verified`, (e as Error).message);
   }
   if (status !== 0) throw new RootError('ATTESTATION_REVOKED', `${d.label} is ${status === 2 ? 'suspended' : 'revoked'}`);
 }
@@ -614,7 +616,11 @@ function statusOriginsOf(trust: TrustConfig): string[] {
   return (trust.trustedIssuers ?? []).map((t) => httpsOrigin(t.iss)).filter((o): o is string => o !== undefined);
 }
 
-/** Checks the status of a PID issued by `pidIss`. Throws RootError PID_REVOKED unless it is valid. */
+/**
+ * Checks the status of a PID issued by `pidIss`. Throws RootError PID_REVOKED when the verified list marks it
+ * revoked or suspended, STATUS_UNAVAILABLE when the list cannot be fetched, STATUS_UNTRUSTED when it was
+ * fetched (or its origin is not allowed) but cannot be trusted.
+ */
 export async function checkPidStatus(ref: StatusReference, pidIss: string, opts: RootOptions): Promise<void> {
   const origin = httpsOrigin(ref.status_list.uri);
   const custom = opts.pidStatusTrust;
@@ -631,7 +637,7 @@ export async function checkPidStatus(ref: StatusReference, pidIss: string, opts:
       ...(opts.maxStatusAgeSeconds !== undefined ? { maxAgeSeconds: opts.maxStatusAgeSeconds } : {}),
     });
   } catch (e) {
-    throw new RootError(e instanceof StatusUnavailableError ? 'STATUS_UNAVAILABLE' : 'PID_REVOKED', 'PID status could not be verified', (e as Error).message);
+    throw new RootError(e instanceof StatusUnavailableError ? 'STATUS_UNAVAILABLE' : 'STATUS_UNTRUSTED', 'PID status could not be verified', (e as Error).message);
   }
   if (status !== 0) throw new RootError('PID_REVOKED', `PID status is ${status === 2 ? 'suspended' : 'revoked'}`);
 }
