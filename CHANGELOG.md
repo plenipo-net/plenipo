@@ -15,6 +15,10 @@ Sandbox
   without handing a private key in as a secret.
 - Mandate requests carry `eudi_wallet_url` (`eudi-openid4vp://authorize?...`) next to the
   `openid4vp://` link, and the request page offers a same-device link.
+- The public sandbox fetches the status lists of the EU test PIDs from their hosts
+  (`SANDBOX_ALLOW_PUBLIC_STATUS`, `PLENIPO_PID_LIST_STATUS_ORIGINS`), and a rejected wallet response
+  shows its detail in the platform feed and log. Found in the first run with the EUDI reference wallet
+  (#44).
 
 ## 0.5.1 (13 November 2026)
 
