@@ -18,7 +18,7 @@ named commit) from what is **to be verified** on the first real run.
 | walt.id behaviour relevant to Plenipo | **Read in the source**, `walt-id/waltid-identity` at `d53d7bc` (17 Oct 2026) |
 | EUDI wallet core transaction data API | **Read in the source**, `eu-digital-identity-wallet/eudi-lib-android-wallet-core` branch `release/0.31.0` at `54eab4d` (2 Oct 2026) |
 | TS12 e-mandate fields | **Read in the spec**, TS12 v1.0.1 (`eudi-doc-standards-and-technical-specifications` at `ee91a29`) |
-| Device runs | walt.id Wallet API 2: **done** (above). EUDI reference wallet on Android: **done** on 15 November 2026 (section B). iOS: **to do** |
+| Device runs | walt.id Wallet API 2: **done** (above). EUDI reference wallet on Android and on iOS: **done** on 15 November 2026 (section B) |
 
 ## The RP certificate (needed by A, B and C)
 
@@ -153,9 +153,9 @@ counterparties and limits, `start_date`, `end_date`, `reference_number` equal to
 Still open: a PID issued by walt.id's Issuer API 2 instead of the sandbox PID provider, and an
 e-mandate bound to an SCA attestation of the account, as TS12 intends, instead of the PID.
 
-## B. EUDI reference wallet (Android)
+## B. EUDI reference wallet (Android and iOS)
 
-### The run of 15 November 2026 (passed)
+### The Android run of 15 November 2026 (passed)
 
 | | |
 | --- | --- |
@@ -189,14 +189,32 @@ What failed on the way, and what fixed it:
 
 `PID_REVOKED` for a status that could not be checked is itself misleading: #49.
 
+### The iOS run of 15 November 2026 (passed)
+
+| | |
+| --- | --- |
+| Wallet | [plenipo-net/eudi-wallet-ios](https://github.com/plenipo-net/eudi-wallet-ios) `plenipo-v0.1.2` (`plenipo-eudi-wallet-simulator.zip`) |
+| Device | Simulator in Xcode on a Mac (Apple Silicon), iPhone 17 Pro, iOS 27 beta |
+| PID | `urn:eudi:pid:1`, SD-JWT VC, from `https://ec.dev.issuer.eudiw.dev`: "PID Combined" under issuer.eudiw.dev in the app's list, country form, Maria Rossi 1984-03-12; status list on `https://dev.revocation.eudiw.dev` |
+| Result | consent screen with every limiting field; mandate active for Maria Rossi; bank: 84.30 to lumen-energia.example **ALLOW**, 180.00 **DENY `LIMIT_PER_OPERATION`**, 29.90 to telenord.example **DENY `COUNTERPARTY_NOT_PERMITTED`** |
+
+The steps are those of Android, with the simulator: drag `EudiWallet.app` onto it, and open the request
+page with `xcrun simctl openurl booted "https://platform.sandbox.plenipo.net/requests/<id>"`. The fork's
+`PLENIPO.md` has them in full.
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| "The wallet could not read its protected data" at the first start | the CI built the app with `CODE_SIGNING_ALLOWED=NO`, so it had no entitlements and no keychain access group | fork `plenipo-v0.1.2`: signed to run locally (`CODE_SIGN_IDENTITY=-`), with a check that `keychain-access-groups` is in the app |
+| "Dispatch rejected", then `PresentationSessionError error 3` on "Try again" | the platform refused the response: `PID_REVOKED` "status list origin https://dev.revocation.eudiw.dev is not allowed". The PID of this run, from the same issuer as the Android one, pointed its status list to the dev revocation service; the Android PID, a few hours earlier, to `revocation.eudiw.dev`. "Try again" reuses a closed session | #58: the origin in `PLENIPO_PID_LIST_STATUS_ORIGINS` and `PLENIPO_PID_LIST_STATUS_SIGNERS` |
+
 ### Sandbox settings for EU test PIDs
 
 ```toml
 PLENIPO_PID_TRUSTED_LISTS = "https://trustedlist.serviceproviders.eudiw.dev/LOTE/json/PIDProviders.jwt"
 PLENIPO_PID_TRUSTED_LIST_SIGNERS = "deploy/eudi-test/pid-providers-list-signer.pem"
 SANDBOX_ALLOW_PUBLIC_STATUS = "1"
-PLENIPO_PID_LIST_STATUS_ORIGINS = "https://revocation.eudiw.dev,https://ec.dev.issuer.eudiw.dev,..."
-PLENIPO_PID_LIST_STATUS_SIGNERS = "https://revocation.eudiw.dev=https://issuer.eudiw.dev"
+PLENIPO_PID_LIST_STATUS_ORIGINS = "https://revocation.eudiw.dev,https://dev.revocation.eudiw.dev,https://ec.dev.issuer.eudiw.dev,..."
+PLENIPO_PID_LIST_STATUS_SIGNERS = "https://revocation.eudiw.dev=https://issuer.eudiw.dev,https://dev.revocation.eudiw.dev=https://issuer.eudiw.dev,https://dev.revocation.eudiw.dev=https://dev.issuer.eudiw.dev,https://dev.revocation.eudiw.dev=https://ec.dev.issuer.eudiw.dev"
 ```
 
 The EU test PIDs are signed under the "PID Issuer CA 02" certificates of the EUDI Wallet Reference
