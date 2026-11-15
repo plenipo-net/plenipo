@@ -18,7 +18,7 @@ named commit) from what is **to be verified** on the first real run.
 | walt.id behaviour relevant to Plenipo | **Read in the source**, `walt-id/waltid-identity` at `d53d7bc` (17 Oct 2026) |
 | EUDI wallet core transaction data API | **Read in the source**, `eu-digital-identity-wallet/eudi-lib-android-wallet-core` branch `release/0.31.0` at `54eab4d` (2 Oct 2026) |
 | TS12 e-mandate fields | **Read in the spec**, TS12 v1.0.1 (`eudi-doc-standards-and-technical-specifications` at `ee91a29`) |
-| Device runs | walt.id Wallet API 2: **done** (above). EUDI reference wallet on Android: **to do** |
+| Device runs | walt.id Wallet API 2: **done** (above). EUDI reference wallet on Android: **done** on 15 November 2026 (section B). iOS: **to do** |
 
 ## The RP certificate (needed by A, B and C)
 
@@ -155,64 +155,65 @@ e-mandate bound to an SCA attestation of the account, as TS12 intends, instead o
 
 ## B. EUDI reference wallet (Android)
 
-### Test PID (verified on 19 October 2026)
+### The run of 15 November 2026 (passed)
 
-The EU test issuer is `https://issuer.eudiw.dev` (source:
-`eu-digital-identity-wallet/eudi-srv-web-issuing-eudiw-py`). Its OpenID4VCI metadata lists
-`eu.europa.ec.eudi.pid_vc_sd_jwt` with format `dc+sd-jwt`, `vct` `urn:eudi:pid:1`, signed with
-ES256. In the reference app, add a document from the EU issuer and pick the PID in SD-JWT VC format;
-the issuer lets you enter test identity data. Credential offers can also be started from
-`https://issuer.eudiw.dev/credential_offer`.
+| | |
+| --- | --- |
+| Wallet | [plenipo-net/eudi-wallet-android](https://github.com/plenipo-net/eudi-wallet-android) `plenipo-v0.1.2` (`app-dev-debug.apk`), wallet core 0.32.0 |
+| Device | Android Studio emulator on a Mac (Apple Silicon), Pixel image, Android 17, arm64, Google Play |
+| PID | `urn:eudi:pid:1`, SD-JWT VC, from `https://ec.dev.issuer.eudiw.dev`: "PID Combined" under issuer.eudiw.dev in the app's list, country form, Maria Rossi 1984-03-12 |
+| Platform | `https://platform.sandbox.plenipo.net`, request certificate under the CA at `/rp-ca.pem` |
+| Result | consent screen with every limiting field; mandate active for Maria Rossi; bank: 84.30 to lumen-energia.example **ALLOW**, 180.00 **DENY `LIMIT_PER_OPERATION`**, 20.00 to telenord.example **DENY `COUNTERPARTY_NOT_PERMITTED`** |
 
-For the bank and the platform to accept it (**to verify** with a real PID):
+Steps, as they worked:
 
-- **Trust anchor.** The EU test PIDs are signed under the "PID Issuer CA 02" certificates of the EUDI
-  Wallet Reference Implementation, one per test country. They are published in the list of test PID
-  providers, `https://trustedlist.serviceproviders.eudiw.dev/LOTE/json/PIDProviders.jwt` (read on 13
-  November 2026: sequence 20, seven issuance CAs for EU, CZ, EE, LU, NL, PT and UT, next update 28
-  March 2027). The list is signed by a certificate "PY PID Issuer DEV" issued by PID Issuer CA 02
-  (EU); Plenipo pins list signers rather than chaining them, so that certificate is in
-  `deploy/eudi-test/pid-providers-list-signer.pem`. Set
-  `PLENIPO_PID_TRUSTED_LISTS=https://trustedlist.serviceproviders.eudiw.dev/LOTE/json/PIDProviders.jwt`
-  and `PLENIPO_PID_TRUSTED_LIST_SIGNERS=deploy/eudi-test/pid-providers-list-signer.pem`, as the public
-  sandbox does; a single CA in a PEM file through `PLENIPO_EXTRA_PID_ANCHORS` works too. Plenipo
-  also requires the signing certificate to **name the PID `iss`** (URI SAN equal to `iss`, or DNS
-  SAN when `iss` is a bare https origin). If the EU test certificates do not, Plenipo refuses the PID
-  with `PID_ISSUER_UNTRUSTED`, and the library needs an option for it (reported as an open point).
-- **Status list.** If the PID carries a status list on another origin than its `iss` (the EU test
-  revocation service runs separately), create `pid-status.json` with
-  `{ "trustAnchors": ["eu-status-ca.pem"], "statusOrigins": ["https://<status host>"] }`, set
-  `PLENIPO_PID_STATUS_TRUST_FILE=pid-status.json` and `SANDBOX_ALLOW_PUBLIC_STATUS=1`.
-- **Claims.** The bank needs `given_name`, `family_name` and `birthdate` (PID Rulebook names for
-  SD-JWT VC), and the sandbox accounts are Maria Rossi (1984-03-12) and Luca Bianchi (1979-11-02):
-  enter one of them at the test issuer, or add your test identity to `PERSONS` in `src/catalog.ts`.
+1. Install the APK of the release on the emulator (drag it onto the window). Uninstall an earlier build
+   first from Settings › Apps: each CI build is signed with a different debug key.
+2. Set the PIN, then Add document › under **issuer.eudiw.dev** › "PID Combined" › the country form ›
+   Maria Rossi, 1984-03-12, IT. The renamed app gets the PID: the wallet attestation was not a problem.
+3. Ask for a mandate (Claude with the sandbox MCP server, or the platform), open
+   `https://platform.sandbox.plenipo.net/requests/<id>` in the emulator's browser and tap
+   "Open in a wallet on this device".
+4. Choose **"PID (SD-JWT VC)"**, read the mandate, Share. **Within 10 minutes** of the request (#51).
 
-### Transaction data in wallet core 0.31.0 (verified in the source)
+What failed on the way, and what fixed it:
 
-- `OpenId4VpConfig.Builder().withTransactionDataTypes(...)` declares the accepted types; the default
-  is none, and a request with an undeclared type is answered `invalid_transaction_data`.
-- Custom types are supported: `TransactionDataType.raw("plenipo_mandate")` declares a type read as
-  plain JSON (only the OpenID4VP members are checked); a typed parser can be written by extending
-  `TransactionType` (README, "Declaring a type of your own"). `sha-256` is mandatory and supported.
-- The presentation is bound by `transaction_data_hashes` in the KB-JWT: "a hash of the transaction
-  data string exactly as received", the binding Plenipo verifies. The `TransactionDataDeviceSigned`
-  requirement applies to `mso_mdoc` only; Plenipo uses SD-JWT VC.
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| "Presentation blocked", relying party not verified | the fork's reader authentication used the default HardFail revocation check; the sandbox RP CA publishes no CRL | fork `plenipo-v0.1.1`: `RevocationPolicy.NoCheck` for the sandbox CA |
+| "cannot show in full, so it was declined" | the fork expected `v` as the number 1; the spec defines the string `"0.1"` | fork `plenipo-v0.1.2` (and the iOS fork) |
+| `ROOT_INVALID` "the request session has expired" | approved 30 minutes after the request | approve within 10 minutes; #51 |
+| `PID_ISSUER_UNTRUSTED` | the PID of `dev.issuer-backend.eudiw.dev` ("PID Combined" under issuer-backend) is signed by a certificate whose URI SAN has a trailing slash | #55 (fixes #50); the other issuer works anyway |
+| `PID_REVOKED` "status list origin is not allowed" | the PIDs point their status list to `https://revocation.eudiw.dev` | #52, #54: `SANDBOX_ALLOW_PUBLIC_STATUS`, `PLENIPO_PID_LIST_STATUS_ORIGINS` |
+| `PID_REVOKED` "the signing certificate does not name https://revocation.eudiw.dev" | the lists are signed by "PID DS - 003" (URI SAN `https://issuer.eudiw.dev`), not by the host | #56: `statusSigners`, `PLENIPO_PID_LIST_STATUS_SIGNERS` |
+
+`PID_REVOKED` for a status that could not be checked is itself misleading: #49.
+
+### Sandbox settings for EU test PIDs
+
+```toml
+PLENIPO_PID_TRUSTED_LISTS = "https://trustedlist.serviceproviders.eudiw.dev/LOTE/json/PIDProviders.jwt"
+PLENIPO_PID_TRUSTED_LIST_SIGNERS = "deploy/eudi-test/pid-providers-list-signer.pem"
+SANDBOX_ALLOW_PUBLIC_STATUS = "1"
+PLENIPO_PID_LIST_STATUS_ORIGINS = "https://revocation.eudiw.dev,https://ec.dev.issuer.eudiw.dev,..."
+PLENIPO_PID_LIST_STATUS_SIGNERS = "https://revocation.eudiw.dev=https://issuer.eudiw.dev"
+```
+
+The EU test PIDs are signed under the "PID Issuer CA 02" certificates of the EUDI Wallet Reference
+Implementation, one per test country, published in the list of test PID providers (read on 13 November
+2026: sequence 20, seven issuance CAs for EU, CZ, EE, LU, NL, PT and UT). Plenipo pins the list signer
+("PY PID Issuer DEV", in `deploy/eudi-test/pid-providers-list-signer.pem`) and requires the signing
+certificate to name the PID `iss`. The bank needs `given_name`, `family_name` and `birthdate`.
+
+### Transaction data in wallet core 0.32.0 (verified)
+
+- `OpenId4VpConfig.Builder().withTransactionDataTypes(TransactionDataType.raw("plenipo_mandate"))`
+  declares the type; objects are read as plain JSON and the core adds `transaction_data_hashes` to the
+  key binding JWT, the binding Plenipo verifies.
 - `configureOpenId4Vp { withClientIdSchemes(ClientIdScheme.X509SanDns) }` and the default
-  `EncryptionPolicy.HAIP` (encrypted responses only) match what the platform sends
-  (`direct_post.jwt`). The verifier certificate is checked by the `ReaderTrustStore`
-  (`configureReaderAuthentication`).
-
-### What to change in a fork of the reference app (to verify)
-
-1. In the wallet core configuration of `eudi-app-android-wallet-ui`, add
-   `.withTransactionDataTypes(TransactionDataType.raw("plenipo_mandate"))`.
-2. Add the sandbox RP CA (`rp-ca.pem` from the public host, section C) to the reader trust
-   configuration, or have the platform's certificate issued under a CA the app already trusts.
-3. Render the mandate on the consent screen from `match.transactionData` (purpose, actions,
-   counterparties, limits, validity): the wallet must show what the person signs. Without this the
-   person approves an opaque blob; do not demo it that way.
-4. Scan the QR code on `https://platform.sandbox.plenipo.net/requests/<id>`: the app must reach the
-   public `request_uri` and `response_uri`, so B needs C.
+  `EncryptionPolicy.HAIP` (encrypted responses only) match what the platform sends (`direct_post.jwt`).
+- Relying parties are checked by `configureReaderAuthentication`; its default revocation policy is
+  `HardFail`, which a test CA without CRLs cannot satisfy.
 
 ## C. Public host
 
