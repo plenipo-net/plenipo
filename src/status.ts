@@ -210,7 +210,8 @@ export function isStatusReference(x: unknown): x is StatusReference {
  */
 /**
  * The status list could not be obtained (network error, HTTP error, size limit). Distinct from a list that
- * was obtained and failed verification, which is treated as an attack, not an outage.
+ * was obtained and failed verification, or sits on an origin that is not allowed: verifiers deny that with
+ * STATUS_UNTRUSTED, an outage with STATUS_UNAVAILABLE, and only a verified entry that is not 0 as revoked.
  */
 export class StatusUnavailableError extends Error {}
 
