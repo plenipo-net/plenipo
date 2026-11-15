@@ -2,8 +2,8 @@
 
 ## Unreleased
 
-First run with the EUDI reference wallet (Android): mandate approved with a PID from the EU test issuer,
-payments allowed and refused by the bank within it (#44).
+First runs with the EUDI reference wallet, on Android and on iOS: mandate approved with a PID from the EU
+test issuer, payments allowed and refused by the bank within it (#44).
 
 Verifier
 - `TrustConfig.statusSigners`: for a status list origin, further identities whose certificate may sign
@@ -33,7 +33,8 @@ Sandbox
   shows its detail in the platform feed and log. Found in the first run with the EUDI reference wallet
   (#44).
 - `PLENIPO_PID_LIST_STATUS_SIGNERS` (`origin=identity` pairs) sets `statusSigners` for the listed status
-  origins; the public sandbox accepts lists from `revocation.eudiw.dev` signed by `issuer.eudiw.dev`.
+  origins; the public sandbox accepts lists from `revocation.eudiw.dev` signed by `issuer.eudiw.dev`, and
+  from `dev.revocation.eudiw.dev`, where the PID of the iOS run pointed (#58).
 
 ## 0.5.1 (13 November 2026)
 
