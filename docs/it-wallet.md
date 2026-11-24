@@ -29,6 +29,15 @@ From the IT-Wallet technical specification, version 1.4.7 (September 2026):
 | PID as SD-JWT VC, type `urn:eudi:pid:it:1` in the examples | default PID type of the profile, overridable |
 | Verifiers justify every attribute they request | `MandateRequest.disclosure`, with `requireClaimPurposes` in the profile |
 
+One inconsistency in the specification text matters here. The Italian remote flow describes each
+`transaction_data` entry as a JSON object, while OpenID4VP 1.0 (section 5.1) defines it as a base64url
+string encoding a JSON object, and says the key binding hash is taken over that string. Plenipo follows
+OpenID4VP 1.0. The difference is reported in the specification repository
+([italia/eid-wallet-it-docs#1242](https://github.com/italia/eid-wallet-it-docs/issues/1242), open in
+November 2026), together with the key binding `aud`, which OpenID4VP 1.0 sets to the full client
+identifier with its prefix, as Plenipo checks it. A wallet built on the current Italian text could
+expect a different encoding: the first run with an Italian wallet has to check both.
+
 The open question is the one no relying party can settle in code: whether the IT-Wallet app shows a
 transaction data type it does not know, such as `plenipo_mandate`, to the person and signs it, or refuses
 the request. The specification says that for mdoc credentials a wallet refuses types the issuer has not
@@ -78,6 +87,9 @@ certificate.
 
 ## Sources
 
+- Specification issues on transaction data and delegation: [#1242](https://github.com/italia/eid-wallet-it-docs/issues/1242)
+  (transaction_data encoding, key binding aud), [#963](https://github.com/italia/eid-wallet-it-docs/issues/963)
+  and [#825](https://github.com/italia/eid-wallet-it-docs/issues/825) (delegation, power of attorney)
 - IT-Wallet technical specification: https://italia.github.io/eid-wallet-it-docs/versione-corrente/en/
   (remote flow, relying party endpoints, credential data model)
 - AgID, regulation for registration and experimentation (23 October 2026): https://www.agid.gov.it/en/node/467
