@@ -121,6 +121,28 @@ export const SCENARIOS: Scenario[] = [
     },
   },
   {
+    id: 'it-wallet',
+    title: 'IT-Wallet profile (simulated): x509_hash, Italian-style PID, a purpose for every claim',
+    expected:
+      'Under profile it-wallet-1 the platform identifies itself by the x509_hash of its certificate, asks for a PID of type urn:eudi:pid:it:1 and states why it needs each claim; Giulia approves with her simulated Italian-style PID; the bank allows a bill within the mandate and refuses one above its limit. No IT-Wallet app is involved.',
+    async run(c) {
+      const req = (await c.client.requestMandate({ agentName: 'Bill assistant (IT-Wallet profile)', preset: UTIL, profile: 'it-wallet-1' })) as Record<string, any>;
+      const clientId = new URL(req.authorization_url).searchParams.get('client_id') ?? '';
+      c.check('client identifier is an x509_hash', /^x509_hash:[A-Za-z0-9_-]{43}$/.test(clientId), 'x509_hash:<43 characters>', clientId);
+      const view = (await (await fetch(`${c.urls.platform}/api/requests/${req.request_id}`)).json()) as { claims?: { claim: string; purpose?: string }[] };
+      const claims = view.claims ?? [];
+      c.check('every requested claim states its purpose', claims.length > 0 && claims.every((d) => typeof d.purpose === 'string' && d.purpose.length > 0), 'all with a purpose', claims.map((d) => `${d.claim}${d.purpose ? '' : ' (none)'}`).join(', '));
+      await c.client.walletDecide(req.request_uri, clientId, 'giulia', 'approve');
+      const s = await c.client.waitForApproval(req.request_id, 10_000);
+      c.check('mandate approved', s.state === 'active', 'active', `${s.state} ${s.error ?? ''}`);
+      if (s.state !== 'active') return;
+      const { principal } = await c.client.mandate(s.mandate_id);
+      c.check('the PID disclosed the tax code', principal.personal_administrative_number === 'VRDGLI90H61H501Z', 'VRDGLI90H61H501Z', String(principal.personal_administrative_number));
+      c.expect('pay Lumen 84.30', await c.client.callTool(s.mandate_id, 'transfer', { payee: 'lumen-energia.example', amount_cents: 8430, reference: 'Lumen bill' }), 'ALLOW');
+      c.expect('pay AcquaViva 180.00', await c.client.callTool(s.mandate_id, 'transfer', { payee: 'acquaviva.example', amount_cents: 18000, reference: 'AcquaViva' }), 'LIMIT_PER_OPERATION');
+    },
+  },
+  {
     id: 'per-operation-limit',
     title: 'Per-operation limit exceeded',
     expected: 'A 180 euro payment under a 150 euro per-operation limit is denied with LIMIT_PER_OPERATION.',

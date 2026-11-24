@@ -153,7 +153,7 @@ export async function startSandbox(options: SandboxOptions = {}): Promise<Sandbo
       pidTrustedIssuers: pidIssuers,
       pidStatusTrust: pidStatus,
       platformStatusSigners: [platform.statusSigner],
-      acceptedPlatforms: [platform.clientId],
+      acceptedPlatforms: [platform.clientId, platform.itClientId],
       statusFetcher,
       statusCacheSeconds,
       stores: stores.bank,

@@ -10,11 +10,17 @@ export interface Person {
   family_name: string;
   birthdate: string;
   nationality: string;
+  /** PID shape: `eudi` (default, type urn:eudi:pid:1) or `it` (type urn:eudi:pid:it:1, as in the IT-Wallet specification). */
+  pid_profile?: 'eudi' | 'it';
+  /** Fictitious tax code, issued only in an Italian-style PID. */
+  personal_administrative_number?: string;
 }
 
 export const PERSONS: Person[] = [
   { id: 'maria', given_name: 'Maria', family_name: 'Rossi', birthdate: '1984-03-12', nationality: 'IT' },
   { id: 'luca', given_name: 'Luca', family_name: 'Bianchi', birthdate: '1979-11-02', nationality: 'IT' },
+  // A simulated Italian-style PID, for requests under profile it-wallet-1. Not issued by IT-Wallet.
+  { id: 'giulia', given_name: 'Giulia', family_name: 'Verdi', birthdate: '1990-06-21', nationality: 'IT', pid_profile: 'it', personal_administrative_number: 'VRDGLI90H61H501Z' },
 ];
 
 export interface Payee {

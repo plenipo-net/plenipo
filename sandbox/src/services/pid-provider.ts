@@ -8,6 +8,7 @@
 import { createTestCertificateAuthority, createTestPidProvider, type PidClaims } from 'plenipo/testing';
 import { decodeJwt, type JWK } from 'jose';
 import type { StatusReference } from 'plenipo';
+import { IT_WALLET_PID_VCT } from 'plenipo/experimental';
 import { EventLog, eventsHandler } from '../events.js';
 import { checkAdmin, escapeHtml, HttpError, listen, readFields, redirect, Router, sendHtml, sendJson, sendText, type Handler, type RunningServer } from '../http.js';
 import { page } from '../ui/layout.js';
@@ -71,14 +72,20 @@ export async function startPidProvider(opts: PidProviderOptions): Promise<PidPro
       }
     }
     if (typeof claims.given_name !== 'string' || typeof claims.family_name !== 'string') throw new HttpError(400, 'names required');
+    const profile = body.profile ?? 'eudi';
+    if (profile !== 'eudi' && profile !== 'it') throw new HttpError(400, 'profile must be eudi or it');
+    const pan = claims.personal_administrative_number;
+    if (pan !== undefined && (typeof pan !== 'string' || !/^[A-Z0-9]{11,16}$/.test(pan))) throw new HttpError(400, 'invalid claim personal_administrative_number');
     if (!/^[a-z0-9-]{1,32}$/.test(personId)) throw new HttpError(400, 'invalid person_id');
     const pidClaims: PidClaims = {
       given_name: claims.given_name,
       family_name: claims.family_name,
       ...(claims.birthdate ? { birthdate: String(claims.birthdate) } : {}),
       ...(claims.nationality ? { nationality: String(claims.nationality) } : {}),
+      ...(typeof pan === 'string' ? { personal_administrative_number: pan } : {}),
     };
-    const pid = await provider.issuePid(holder, pidClaims);
+    // An Italian-style PID: the type in the examples of the IT-Wallet specification. Simulated.
+    const pid = await provider.issuePid(holder, pidClaims, profile === 'it' ? { vct: IT_WALLET_PID_VCT } : {});
     // Read the status reference from the PID itself (the claim is not selectively disclosable), not from
     // `lastStatus`, which a concurrent issuance could overwrite between the call and the read.
     const status = decodeJwt(pid.split('~')[0]).status as StatusReference | undefined;
@@ -92,7 +99,7 @@ export async function startPidProvider(opts: PidProviderOptions): Promise<PidPro
       issuedAt: new Date().toISOString(),
     };
     issued.set(record.id, record);
-    events.append('pid_issued', { pid_id: record.id, person: record.name, status_idx: status.status_list.idx });
+    events.append('pid_issued', { pid_id: record.id, person: record.name, status_idx: status.status_list.idx, ...(profile === 'it' ? { profile: 'it (simulated)' } : {}) });
     sendJson(res, 200, { pid, pid_id: record.id, status });
   });
 

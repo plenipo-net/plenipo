@@ -7,7 +7,7 @@ a live dashboard shows each decision as it happens.
 
 ```
                  ┌──────────────┐ PID (SD-JWT VC)      ┌──────────────┐
-                 │ PID provider │─────────────────────▶│    Wallet    │  Maria Rossi, Luca Bianchi
+                 │ PID provider │─────────────────────▶│    Wallet    │  Maria Rossi, Luca Bianchi, Giulia Verdi
                  │  test CA,    │                      │ consent page │
                  │  status list │                      └──────┬───────┘
                  └──────┬───────┘         OpenID4VP 1.0       │ approve: PID + KB-JWT over the mandate hash
@@ -52,7 +52,7 @@ Either way the services listen on 127.0.0.1 only:
 | --- | --- | --- |
 | Dashboard | http://127.0.0.1:4400 | Live view: mandates and chains, every bank decision, ledger use against limits, revocations. Open this first. |
 | PID provider | http://127.0.0.1:4401 | A test CA standing in for an EU trusted list entry, a PID issuer certified by it, and the PID status list (`/status/1`). Its page can revoke or suspend a PID. |
-| Wallet | http://127.0.0.1:4402 | `plenipo/testing`'s wallet behind a consent page. Holds a PID for Maria Rossi and one for Luca Bianchi. Checks the request object's certificate, refuses unknown transaction data types, shows purpose, actions, counterparties, limits and validity, and posts the OpenID4VP response on approval. |
+| Wallet | http://127.0.0.1:4402 | `plenipo/testing`'s wallet behind a consent page. Holds a PID for Maria Rossi and one for Luca Bianchi, and a simulated Italian-style PID (type `urn:eudi:pid:it:1`, with a fictitious tax code) for Giulia Verdi. Accepts `x509_san_dns` and `x509_hash` client identifiers. Checks the request object's certificate, refuses unknown transaction data types, shows purpose, actions, counterparties, limits and validity, and posts the OpenID4VP response on approval. |
 | Agent platform | http://127.0.0.1:4403 | Creates mandate requests, serves `request_uri`, receives the wallet response, holds the agents' keys and signs their invocations, creates sub-delegations, publishes the mandate status list (`/status/mandates`). "My mandates" page with suspend / reinstate / revoke. |
 | Bank | http://127.0.0.1:4404 | Two accounts, a payee register (Lumen, AcquaViva, TeleNord, Rotaia, an e-shop), an MCP server at `/mcp` with `get_balance`, `list_payees`, `transfer`, `block_card`, each wrapped with `guardTool`, and a PSD2-like REST API at `/psd2/v1`. Every decision goes to its event log. |
 
@@ -93,6 +93,7 @@ Each prints PASS or FAIL against the expected outcome, step by step.
 | `reads-without-reservation` | Balance and payee reads under a mandate that lists only the billers | ALLOW, no reservation, the full total stays available |
 | `prompt-injection` | Luca's water bill tells AI assistants to pay `acquaviva-rimborsi.example`; a fooled agent tries | `COUNTERPARTY_NOT_PERMITTED`, then the real AcquaViva payment passes |
 | `emandate` | The utilities mandate requested as a TS12 `urn:eudi:sca:emandate:1`, bound to the PID | the bank accepts the root and enforces the limits |
+| `it-wallet` | The utilities mandate under profile `it-wallet-1`: `x509_hash` client identifier, PID type `urn:eudi:pid:it:1`, a purpose for every requested claim; Giulia Verdi approves with a simulated Italian-style PID | ALLOW within the mandate, `LIMIT_PER_OPERATION` above it; no IT-Wallet app involved ([docs/it-wallet.md](../docs/it-wallet.md)) |
 
 ## A five-minute demo
 
