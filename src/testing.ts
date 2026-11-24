@@ -25,7 +25,7 @@ import {
 } from '@peculiar/asn1-ocsp';
 import { SDJwtVcInstance } from '@sd-jwt/sd-jwt-vc';
 import { ES256, digest, generateSalt } from '@sd-jwt/crypto-nodejs';
-import { calculateJwkThumbprint, CompactEncrypt, decodeJwt, importJWK, type JWK } from 'jose';
+import { calculateJwkThumbprint, CompactEncrypt, decodeJwt, decodeProtectedHeader, importJWK, type JWK } from 'jose';
 import { sha256 } from './encoding.js';
 import type { RepresentationClaims } from './legal.js';
 import { encodeMandateTransactionData, nowSeconds } from './mandate.js';
@@ -339,7 +339,7 @@ export interface TestPidProvider {
 
 export async function createTestPidProvider(
   iss = 'https://pid-provider.test',
-  opts: { x5c?: boolean; statusList?: boolean; ca?: TestCertificateAuthority; leaf?: TestLeafOptions } = {},
+  opts: { x5c?: boolean; statusList?: boolean; ca?: TestCertificateAuthority; leaf?: TestLeafOptions; vct?: string } = {},
 ): Promise<TestPidProvider> {
   let privateJwk: JWK;
   let publicJwk: JWK;
@@ -391,7 +391,7 @@ export async function createTestPidProvider(
         ...(o.omitIss ? {} : { iss }),
         iat,
         exp: o.exp ?? iat + 365 * 24 * 3600,
-        vct: PID_VCT,
+        vct: opts.vct ?? PID_VCT,
         cnf: { jwk: holderJwk },
         ...(status ? { status } : {}),
         ...claims,
@@ -550,6 +550,16 @@ export interface TestWalletOptions {
    * metadata lists the type, which is the default behaviour.
    */
   emandateOnPid?: boolean;
+  /**
+   * Client identifier prefixes the wallet accepts, as a wallet profile restricts them (the IT-Wallet
+   * specification allows `openid_federation` and `x509_hash`). Default any.
+   */
+  clientIdPrefixes?: string[];
+  /**
+   * Check an `x509_hash` client identifier against the certificate of the signed request object, as
+   * OpenID4VP 1.0 requires. Needs the request object, not the bare parameters. Default false.
+   */
+  checkX509Hash?: boolean;
 }
 
 export interface TestWallet {
@@ -681,15 +691,25 @@ export async function createTestWallet(walletOpts: TestWalletOptions = {}): Prom
     async respond(request, policy = {}) {
       const params = (typeof request === 'string' ? decodeJwt(request) : request) as Record<string, any>;
       const state = params.state;
+      const clientId = String(params.client_id ?? '');
+      const prefix = clientId.includes(':') ? clientId.slice(0, clientId.indexOf(':')) : '';
+      if (walletOpts.clientIdPrefixes && !walletOpts.clientIdPrefixes.includes(prefix)) return { error: 'invalid_client', state };
+      if (walletOpts.checkX509Hash && prefix === 'x509_hash') {
+        if (typeof request !== 'string') return { error: 'invalid_request', state };
+        const leaf = (decodeProtectedHeader(request).x5c as string[] | undefined)?.[0];
+        const hash = leaf ? createHash('sha256').update(Buffer.from(leaf, 'base64')).digest('base64url') : undefined;
+        if (clientId !== `x509_hash:${hash}`) return { error: 'invalid_client', state };
+      }
+      const pidVct = pid ? String((decodeJwt(pid.split('~')[0]) as Record<string, unknown>).vct) : PID_VCT;
       const queries = params.dcql_query?.credentials;
       const first = Array.isArray(queries) ? queries[0] : undefined;
-      if (!first || first.format !== 'dc+sd-jwt' || !first.meta?.vct_values?.includes(PID_VCT)) {
+      if (!first || first.format !== 'dc+sd-jwt' || !first.meta?.vct_values?.includes(pidVct)) {
         return { error: 'invalid_request', state };
       }
       if (!pid) return { error: 'access_denied', state };
       // Match every credential query against what the wallet holds.
       const held = new Map<string, HeldCredential>();
-      held.set(first.id, { sdjwt: pid, vct: PID_VCT, privateJwk: holder.privateKey as JWK, transactionDataTypes: [] });
+      held.set(first.id, { sdjwt: pid, vct: pidVct, privateJwk: holder.privateKey as JWK, transactionDataTypes: [] });
       for (const q of queries.slice(1)) {
         if (q?.format !== 'dc+sd-jwt' || typeof q.id !== 'string' || held.has(q.id)) return { error: 'invalid_request', state };
         const c =

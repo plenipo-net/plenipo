@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased
+
+IT-Wallet profile, in preparation for the Italian IT-Wallet System, which opened to citizens on
+23 November 2026. Nothing here has run against an Italian wallet yet ([docs/it-wallet.md](docs/it-wallet.md)).
+
+Upgrading: `MandateRequest` has a new member `disclosure`. Nothing else changes for existing callers.
+
+OpenID4VP
+- `x509_hash` client identifiers (OpenID4VP 1.0, section 5.9.3): `x509HashClientId(certificate)`, and
+  `createMandateRequest` refuses an `x509_hash` client identifier without a signer or one that does not
+  match the signing certificate in `x5c`. An empty `clientId` is now refused when the request is built.
+- `createMandateRequest({ pidVcts })`: the PID types the DCQL query asks for, default
+  `['urn:eudi:pid:1']`.
+- `MandateRequest.disclosure`: every requested claim with its purpose; `claimPurposes` states them,
+  `DEFAULT_CLAIM_PURPOSES` covers the claims Plenipo relies on, and `requireClaimPurposes` refuses a
+  request that asks for a claim with no stated purpose. A verifier in the IT-Wallet System must be able to
+  justify every attribute it requests.
+
+Experimental (`plenipo/experimental`)
+- Profile `it-wallet-1`: `itWalletRequestOptions` (x509_hash client identifier from the signing
+  certificate, encrypted response, PID type `urn:eudi:pid:it:1`, a purpose for every claim),
+  `itWalletVerifyDefaults` and `itWalletRequestProblems`, which names the rules of the Italian remote flow a
+  request breaks.
+
+Testing
+- `createTestPidProvider(iss, { vct })` issues PIDs of another type; the test wallet presents the type it
+  holds, and can be restricted to client identifier prefixes (`clientIdPrefixes`) and check `x509_hash`
+  against the request object (`checkX509Hash`).
+
 ## 0.6.0 (15 November 2026)
 
 First runs with the EUDI reference wallet, on Android and on iOS: mandate approved with a PID from the EU

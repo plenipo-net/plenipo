@@ -70,3 +70,15 @@ export {
   PROTECTED_CLAIMS,
   type VerifiedPresentation,
 } from './presentation.js';
+
+// IT-Wallet profile it-wallet-1 (Italian IT-Wallet System, not yet run against an Italian wallet)
+export {
+  IT_WALLET_PROFILE,
+  IT_WALLET_PID_VCT,
+  IT_WALLET_CLIENT_ID_PREFIXES,
+  IT_WALLET_DEFAULT_CLAIMS,
+  itWalletRequestOptions,
+  itWalletVerifyDefaults,
+  itWalletRequestProblems,
+  type ItWalletRequestInput,
+} from './itwallet.js';

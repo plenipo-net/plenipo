@@ -11,7 +11,10 @@ request that a conformant wallet can process:
 - one `transaction_data` entry of type `plenipo_mandate`, bound to the `pid`
   query;
 - an optional signed request object (`typ: oauth-authz-req+jwt`, `x5c` in the
-  header for `x509_san_dns:` client identifiers), to serve at `request_uri`.
+  header for `x509_san_dns:` and `x509_hash:` client identifiers), to serve at
+  `request_uri`;
+- `MandateRequest.disclosure`: every claim the request asks for, with its
+  purpose, for relying parties that must justify each attribute they request.
 
 `handleMandateResponse` decrypts the response, checks `state`, takes the one
 presentation for `pid`, verifies the PID (trusted issuer or x5c chain, status
@@ -34,7 +37,7 @@ matter of registering the type, not of changing the protocol.
 | walt.id Wallet API 2 | Transaction data types are configurable through transaction data profiles. | **Works.** With the profile in `sandbox/level2/waltid/config`, Wallet API 2 (`stable`, October 2026) approved a `plenipo_mandate` and the bank enforced it, end to end, on 25 October 2026 (`sandbox/level2/README.md`). |
 | EUDI reference wallet (Android) | Wallet core 0.32.0 accepts custom types (`TransactionDataType.raw`); the reference app declines what its consent screen cannot show. | **Works.** The fork [plenipo-net/eudi-wallet-android](https://github.com/plenipo-net/eudi-wallet-android) declares `plenipo_mandate` and shows every limiting field. On 15 November 2026 (`plenipo-v0.1.2`, Android emulator) it approved a mandate with a PID from the EU test issuer, and the bank allowed and refused payments within it (#44, `sandbox/level2/README.md`). |
 | EUDI reference wallet (iOS) | The wallet kit hands custom types over as raw JSON. | **Works.** The fork [plenipo-net/eudi-wallet-ios](https://github.com/plenipo-net/eudi-wallet-ios) shows the same consent rows. On 15 November 2026 (`plenipo-v0.1.2`, iOS simulator) it approved a mandate with a PID from the EU test issuer, and the bank allowed and refused payments within it (#44, `sandbox/level2/README.md`). |
-| IT-Wallet (app IO) | No public support for custom transaction data types. | Needs agreement with the scheme operator; see the roadmap. |
+| IT-Wallet (app IO) | Opening to citizens since 23 November 2026. The specification (1.4.7) has `transaction_data` as an optional request parameter, bound through `transaction_data_hashes`; whether the app shows a type it does not know is not known. | **In preparation.** Profile `it-wallet-1` builds requests with the `x509_hash` client identifier and the Italian PID type; nothing has run against an Italian wallet yet. See [it-wallet.md](it-wallet.md). |
 
 ## Testing against a wallet
 
