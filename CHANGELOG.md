@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.7.0 (24 November 2026)
 
 IT-Wallet profile, in preparation for the Italian IT-Wallet System, which opened to citizens on
 23 November 2026. Nothing here has run against an Italian wallet yet ([docs/it-wallet.md](docs/it-wallet.md)).
