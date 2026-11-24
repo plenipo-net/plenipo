@@ -190,11 +190,9 @@ See [ROADMAP.md](ROADMAP.md). Changes by version are in [CHANGELOG.md](CHANGELOG
 
 ## Limits
 
-- One third-party wallet so far: walt.id Wallet API 2, a server-side wallet, approved a
-  `plenipo_mandate` and a TS12 e-mandate bound to the PID, with a test PID from the sandbox, and the
-  sandbox bank enforced them ([docs/interop.md](docs/interop.md)). No phone wallet yet: the EUDI
-  reference wallet core declares accepted types since release 0.31.0; IT-Wallet does not accept
-  custom types.
+- Wallets so far: walt.id Wallet API 2 (server-side) and the EUDI reference wallet on Android and iOS,
+  through forks that show the mandate, with test PIDs ([docs/interop.md](docs/interop.md)). IT-Wallet:
+  profile `it-wallet-1` is ready, not yet run against an Italian wallet ([docs/it-wallet.md](docs/it-wallet.md)).
 - With TS12, the e-mandate is approved with a bank's SCA attestation, not the PID. Tying that
   attestation to the PID holder needs the same holder key or identity claims the bank includes;
   see [docs/root.md](docs/root.md).

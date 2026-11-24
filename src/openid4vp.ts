@@ -7,7 +7,7 @@
  * Responses are encrypted to the platform by default (response_mode direct_post.jwt), as HAIP requires.
  */
 import { signCompactJwt, type SigningKey } from './signer.js';
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID, X509Certificate } from 'node:crypto';
 import {
   compactDecrypt,
   exportJWK,
@@ -34,6 +34,16 @@ export interface MandateRequestOptions {
   responseUri: string;
   /** PID claims to request. Default given_name and family_name. */
   disclose?: string[];
+  /** PID types to ask for in the DCQL query (`vct_values`). Default `['urn:eudi:pid:1']`. */
+  pidVcts?: string[];
+  /**
+   * Why each requested claim is needed, by claim name: reported in `MandateRequest.disclosure`, so a relying
+   * party can show that it asks only for what the mandate needs. Claims Plenipo itself relies on have a
+   * default reason (`DEFAULT_CLAIM_PURPOSES`).
+   */
+  claimPurposes?: Record<string, string>;
+  /** Refuse to build a request that asks for a claim with no stated purpose. Default false. */
+  requireClaimPurposes?: boolean;
   /** Encrypt the wallet response to this platform. Default true. */
   encryptResponse?: boolean;
   /** Signs the request object. Required by most wallets for x509_san_dns client identifiers. */
@@ -89,9 +99,28 @@ export interface MandateRequestSession {
   extraQueries?: string[];
 }
 
+/** One claim a request asks for, and why. */
+export interface ClaimDisclosure {
+  /** DCQL credential query id: `pid`, `sca` or `representation`. */
+  credential: string;
+  claim: string;
+  /** Why the claim is needed; absent when nobody stated it. */
+  purpose?: string;
+}
+
+/** Reasons for the claims Plenipo itself relies on. */
+export const DEFAULT_CLAIM_PURPOSES: Readonly<Record<string, string>> = Object.freeze({
+  given_name: 'Names the person who approves the mandate, in the decision and in the audit log.',
+  family_name: 'Names the person who approves the mandate, in the decision and in the audit log.',
+  personal_administrative_number:
+    'Identifies the person stably across mandates (principal_id), so limits, revocations and audit records refer to the same person.',
+});
+
 export interface MandateRequest {
   /** Authorization request parameters, as JSON. */
   params: Record<string, unknown>;
+  /** Every claim the request asks for, by credential, with its purpose: the data minimisation record. */
+  disclosure: ClaimDisclosure[];
   /** Signed request object, when a signer was given: serve it at the request_uri until `expiresAt`. */
   requestObject?: string;
   /** When the request expires, in seconds since the epoch: show it to the person, stop serving the request object after it. */
@@ -117,16 +146,45 @@ export async function createMandateRequest(opts: MandateRequestOptions): Promise
         type: em.type ?? EMANDATE_TX_DATA_TYPE,
       })
     : encodeMandateTransactionData(opts.mandate, PID_QUERY_ID);
+  checkClientId(opts.clientId, opts.signer);
+  const pidVcts = opts.pidVcts ?? [PID_VCT];
+  if (!Array.isArray(pidVcts) || pidVcts.length === 0 || pidVcts.some((v) => typeof v !== 'string' || v.length === 0)) {
+    throw new Error('pidVcts must be a non-empty list of credential types');
+  }
   const extraQueries: string[] = [];
+  const purposes: Record<string, string> = { ...DEFAULT_CLAIM_PURPOSES, ...(opts.claimPurposes ?? {}) };
+  const scaBindingPurpose = 'Ties the SCA attestation to the PID holder (scaIdentityClaims).';
+  const representationBindingPurpose = 'Ties the representation attestation to the PID holder.';
   // Identity claims compared with another credential must be disclosed by the PID too.
   const pidClaims = new Set(opts.disclose ?? ['given_name', 'family_name']);
-  if (emandate && bindTo === SCA_QUERY_ID) for (const c of em.scaIdentityClaims ?? []) pidClaims.add(c);
-  if (opts.mandate.principal) for (const c of opts.representation?.identityClaims ?? []) pidClaims.add(c);
+  const pidPurpose = new Map<string, string>();
+  if (emandate && bindTo === SCA_QUERY_ID) for (const c of em.scaIdentityClaims ?? []) {
+    pidClaims.add(c);
+    pidPurpose.set(c, purposes[c] ?? scaBindingPurpose);
+  }
+  if (opts.mandate.principal) for (const c of opts.representation?.identityClaims ?? []) {
+    pidClaims.add(c);
+    if (!pidPurpose.has(c)) pidPurpose.set(c, purposes[c] ?? representationBindingPurpose);
+  }
+  const disclosure: ClaimDisclosure[] = [...pidClaims].map((claim) => {
+    const purpose = Object.hasOwn(purposes, claim) ? purposes[claim] : pidPurpose.get(claim);
+    return { credential: PID_QUERY_ID, claim, ...(purpose ? { purpose } : {}) };
+  });
+  for (const c of em.scaIdentityClaims ?? []) {
+    if (emandate && bindTo === SCA_QUERY_ID) disclosure.push({ credential: SCA_QUERY_ID, claim: c, purpose: scaBindingPurpose });
+  }
+  if (opts.mandate.principal) {
+    for (const c of opts.representation?.identityClaims ?? []) disclosure.push({ credential: REPRESENTATION_QUERY_ID, claim: c, purpose: representationBindingPurpose });
+  }
+  if (opts.requireClaimPurposes) {
+    const missing = disclosure.filter((d) => !d.purpose).map((d) => d.claim);
+    if (missing.length) throw new Error(`no purpose stated for the requested claims: ${missing.join(', ')}`);
+  }
   const queries: Record<string, unknown>[] = [
     {
       id: PID_QUERY_ID,
       format: 'dc+sd-jwt',
-      meta: { vct_values: [PID_VCT] },
+      meta: { vct_values: [...pidVcts] },
       claims: [...pidClaims].map((c) => ({ path: [c] })),
     },
   ];
@@ -180,6 +238,7 @@ export async function createMandateRequest(opts: MandateRequestOptions): Promise
 
   return {
     params,
+    disclosure,
     requestObject,
     expiresAt,
     session: {
@@ -196,6 +255,37 @@ export async function createMandateRequest(opts: MandateRequestOptions): Promise
       ...(extraQueries.length ? { extraQueries } : {}),
     },
   };
+}
+
+/**
+ * The `x509_hash` client identifier for a certificate (OpenID4VP 1.0, section 5.9.3): the base64url
+ * SHA-256 of its DER encoding. Accepts an x5c entry (base64 DER) or a PEM certificate.
+ */
+export function x509HashClientId(certificate: string): string {
+  return `x509_hash:${certificateHash(certificate)}`;
+}
+
+function certificateHash(certificate: string): string {
+  const der = certificate.includes('-----BEGIN')
+    ? new X509Certificate(certificate).raw
+    : Buffer.from(certificate.replace(/\s+/g, ''), 'base64');
+  if (der.length === 0) throw new Error('certificate is empty');
+  // Parse it, so that a value that is not a certificate is refused rather than hashed.
+  new X509Certificate(der);
+  return createHash('sha256').update(der).digest('base64url');
+}
+
+/**
+ * A request under an `x509_hash` client identifier must be signed with the key of the certificate it
+ * names, carried first in x5c (OpenID4VP 1.0, section 5.9.3). Checked here so a platform cannot build a
+ * request that every wallet would refuse.
+ */
+function checkClientId(clientId: string, signer: MandateRequestOptions['signer']): void {
+  if (typeof clientId !== 'string' || clientId.length === 0) throw new Error('clientId is required');
+  if (!clientId.startsWith('x509_hash:')) return;
+  const leaf = signer?.x5c?.[0];
+  if (!leaf) throw new Error('an x509_hash client identifier needs a signer with the certificate in x5c');
+  if (clientId !== x509HashClientId(leaf)) throw new Error('the x509_hash client identifier does not match the signing certificate');
 }
 
 /** The URL to put in a QR code or a link, for a request object served at `requestUri`. */

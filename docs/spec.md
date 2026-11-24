@@ -259,7 +259,13 @@ accepts them only when configured to, and their formats may change in a minor re
 - Delegate SD-JWT links, a second wire format for delegations ([delegation.md](delegation.md));
 - TS12 e-mandate roots, transaction data type `urn:eudi:sca:emandate:1` ([root.md](root.md));
 - mandates on behalf of a legal person, with the representation attestation
-  `urn:plenipo:representation:1` ([root.md](root.md)).
+  `urn:plenipo:representation:1` ([root.md](root.md));
+- profile `it-wallet-1` for the Italian IT-Wallet System ([it-wallet.md](it-wallet.md)): the request
+  uses an `x509_hash` client identifier (OpenID4VP 1.0, section 5.9.3: the base64url SHA-256 of the DER
+  leaf certificate, which signs the request object and is first in its `x5c`), `response_mode`
+  `direct_post.jwt`, the PID type `urn:eudi:pid:it:1` unless configured otherwise, and states a purpose
+  for every requested claim. The mandate, its transaction data and the root verification are those of
+  sections 2 and 3, unchanged. A verifier under this profile accepts the configured Italian PID types.
 
 ## 10. Test vectors
 
