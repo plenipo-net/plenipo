@@ -86,9 +86,10 @@ export class SandboxAgentClient {
   }
 
   /** Creates a mandate request at the platform. */
-  async requestMandate(input: { agentName: string; preset?: string; spec?: MandateSpec; ttlSeconds?: number; emandate?: boolean; agentJwk?: unknown }) {
+  async requestMandate(input: { agentName: string; preset?: string; spec?: MandateSpec; ttlSeconds?: number; emandate?: boolean; agentJwk?: unknown; profile?: 'it-wallet-1' }) {
     const extra = {
       ...(input.emandate ? { transaction_data_type: 'emandate' } : {}),
+      ...(input.profile ? { profile: input.profile } : {}),
       ...(input.agentJwk ? { agent_jwk: input.agentJwk } : {}),
     };
     const body = input.preset
@@ -145,7 +146,7 @@ export class SandboxAgentClient {
   }
 
   /** Requests a mandate and has the person approve it in the sandbox wallet, end to end over HTTP. */
-  async obtainMandate(input: { agentName: string; person: string; preset?: string; spec?: MandateSpec; ttlSeconds?: number; emandate?: boolean }): Promise<string> {
+  async obtainMandate(input: { agentName: string; person: string; preset?: string; spec?: MandateSpec; ttlSeconds?: number; emandate?: boolean; profile?: 'it-wallet-1' }): Promise<string> {
     const req = await this.requestMandate(input);
     const clientId = new URL(req.authorization_url).searchParams.get('client_id')!;
     await this.walletDecide(req.request_uri, clientId, input.person, 'approve');

@@ -4,7 +4,7 @@
  * signed by a certificate naming the client_id, refuses transaction data types it does not know, shows
  * the person exactly what the agent will be allowed to do, and on approval posts the OpenID4VP response.
  */
-import { randomUUID } from 'node:crypto';
+import { randomUUID, X509Certificate } from 'node:crypto';
 import { decodeProtectedHeader, importJWK, jwtVerify } from 'jose';
 import {
   decodeMandateTransactionData,
@@ -14,6 +14,7 @@ import {
   validateMandate,
   verifyX5c,
   nowSeconds,
+  x509HashClientId,
   type Mandate,
 } from 'plenipo';
 import { createTestWallet, type TestWallet } from 'plenipo/testing';
@@ -103,7 +104,14 @@ export async function startWallet(opts: WalletOptions): Promise<WalletService> {
       body: JSON.stringify({
         person_id: person.id,
         holder_jwk: wallet.holderJwk,
-        claims: { given_name: person.given_name, family_name: person.family_name, birthdate: person.birthdate, nationality: person.nationality },
+        claims: {
+          given_name: person.given_name,
+          family_name: person.family_name,
+          birthdate: person.birthdate,
+          nationality: person.nationality,
+          ...(person.personal_administrative_number ? { personal_administrative_number: person.personal_administrative_number } : {}),
+        },
+        ...(person.pid_profile ? { profile: person.pid_profile } : {}),
       }),
     });
     if (res.status !== 200) throw new Error(`PID issuance for ${person.id} failed with HTTP ${res.status}`);
@@ -116,11 +124,14 @@ export async function startWallet(opts: WalletOptions): Promise<WalletService> {
   const requests = new Map<string, PendingRequest>();
 
   async function intake(clientId: string, requestUri: string, personHint?: string): Promise<PendingRequest> {
-    if (typeof clientId !== 'string' || !clientId.startsWith('x509_san_dns:')) {
-      throw new HttpError(400, 'this wallet accepts x509_san_dns client identifiers only');
+    // x509_san_dns: the certificate must name the client's DNS name. x509_hash (OpenID4VP 1.0, 5.9.3, the
+    // prefix the IT-Wallet specification allows): the client is the certificate whose SHA-256 it carries.
+    const hashed = typeof clientId === 'string' && clientId.startsWith('x509_hash:');
+    if (typeof clientId !== 'string' || !(clientId.startsWith('x509_san_dns:') || hashed)) {
+      throw new HttpError(400, 'this wallet accepts x509_san_dns and x509_hash client identifiers only');
     }
-    const dns = clientId.slice('x509_san_dns:'.length);
-    if (!/^([a-z0-9-]+\.)*[a-z0-9-]+$/.test(dns)) throw new HttpError(400, 'invalid client_id');
+    let dns = hashed ? '' : clientId.slice('x509_san_dns:'.length);
+    if (hashed ? !/^x509_hash:[A-Za-z0-9_-]{43}$/.test(clientId) : !/^([a-z0-9-]+\.)*[a-z0-9-]+$/.test(dns)) throw new HttpError(400, 'invalid client_id');
     // The same link opened twice shows the request already received: a pending one is decided once,
     // an approved one is shown as approved. A refused or failed one may be fetched again.
     for (const prev of requests.values()) {
@@ -149,6 +160,12 @@ export async function startWallet(opts: WalletOptions): Promise<WalletService> {
     if (header.alg !== 'ES256' || header.typ !== 'oauth-authz-req+jwt') throw new HttpError(400, 'unexpected request object header');
     let key;
     try {
+      if (hashed) {
+        const leaf = Array.isArray(header.x5c) && typeof header.x5c[0] === 'string' ? header.x5c[0] : '';
+        if (!leaf || x509HashClientId(leaf) !== clientId) throw new Error('the certificate does not match the x509_hash client identifier');
+        // The hash pins the certificate; it must still chain to a trusted relying party CA, under the name it carries.
+        dns = certificateHost(leaf);
+      }
       key = verifyX5c(header.x5c, opts.rpTrustAnchors, nowSeconds(), `https://${dns}`);
     } catch (e) {
       throw new HttpError(400, `the requester's certificate is not trusted: ${(e as Error).message}`);
@@ -452,4 +469,12 @@ function parseTarget(body: Record<string, unknown>): { clientId: string; request
 function stateBadge(s: string): string {
   const cls = s === 'approved' ? 'b-allow' : s === 'pending' ? 'b-warn' : 'b-deny';
   return `<span class="badge ${cls}">${escapeHtml(s)}</span>`;
+}
+
+/** The host of the first https URI subject alternative name of a certificate (base64 DER). */
+function certificateHost(certificate: string): string {
+  const san = new X509Certificate(Buffer.from(certificate, 'base64')).subjectAltName ?? '';
+  const uri = san.split(/,\s*/).find((n) => n.startsWith('URI:https://'));
+  if (!uri) throw new Error('the certificate names no https URI');
+  return new URL(uri.slice(4)).hostname;
 }

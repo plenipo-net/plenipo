@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.7.0 (24 November 2026)
 
 IT-Wallet profile, in preparation for the Italian IT-Wallet System, which opened to citizens on
 23 November 2026. Nothing here has run against an Italian wallet yet ([docs/it-wallet.md](docs/it-wallet.md)).
@@ -23,6 +23,16 @@ Experimental (`plenipo/experimental`)
   certificate, encrypted response, PID type `urn:eudi:pid:it:1`, a purpose for every claim),
   `itWalletVerifyDefaults` and `itWalletRequestProblems`, which names the rules of the Italian remote flow a
   request breaks.
+
+Sandbox
+- Scenario `it-wallet` (20 scenarios in all): a request under profile `it-wallet-1`, with the
+  `x509_hash` of the platform's certificate as client identifier, approved with a simulated Italian-style
+  PID for a new person, Giulia Verdi; the bank allows within the mandate and refuses above it. No IT-Wallet
+  app is involved.
+- The platform API takes `profile: "it-wallet-1"`; requests show `profile` and `claims` (every requested
+  claim with its purpose), and the `mandate_requested` event lists the claims with their purposes.
+- The wallet accepts `x509_hash` client identifiers: the certificate must hash to it and chain to a
+  trusted relying party CA. The PID provider issues Italian-style PIDs (`profile: "it"`).
 
 Testing
 - `createTestPidProvider(iss, { vct })` and `issuePid(…, { vct })` issue PIDs of another type; the test wallet presents the type it

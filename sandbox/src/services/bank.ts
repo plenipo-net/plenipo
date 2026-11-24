@@ -16,6 +16,7 @@ import {
   InMemorySpendingLedger,
   mandateHash,
   nowSeconds,
+  PID_VCT,
   type ReservationInfo,
   peekInvocation,
   StatusListCache,
@@ -29,6 +30,7 @@ import {
   type TrustedIssuer,
   type VerifyOptions,
 } from 'plenipo';
+import { IT_WALLET_PID_VCT } from 'plenipo/experimental';
 import { guardTool } from 'plenipo/mcp';
 import { BINDING_META_KEY, bindCall, type BoundCall, type ToolBinding } from '../binding.js';
 import { BILLS, formatEuro, OPENING_BALANCES, PAYEES, PERSONS, type Person } from '../catalog.js';
@@ -185,6 +187,8 @@ export async function startBank(opts: BankOptions): Promise<BankService> {
       pidStatusTrust: opts.pidStatusTrust,
       mandateStatusTrust: { trustedIssuers: opts.platformStatusSigners },
       acceptedRootAudiences: opts.acceptedPlatforms,
+      // EU PIDs, and the simulated Italian-style PIDs of profile it-wallet-1.
+      acceptedPidVcts: [PID_VCT, IT_WALLET_PID_VCT],
       statusFetcher: opts.statusFetcher,
       statusCache,
       audience,

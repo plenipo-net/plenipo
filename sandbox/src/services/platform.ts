@@ -15,6 +15,8 @@ import {
   createInvocation,
   createMandate,
   createMandateRequest,
+  PID_VCT,
+  x509HashClientId,
   delegateMandate,
   generateAgentKey,
   handleMandateResponse,
@@ -37,6 +39,8 @@ import {
   type TrustedIssuer,
 } from 'plenipo';
 import { createTestCertificateAuthority } from 'plenipo/testing';
+import { IT_WALLET_DEFAULT_CLAIMS, IT_WALLET_PID_VCT } from 'plenipo/experimental';
+import type { ClaimDisclosure } from 'plenipo';
 import { counterpartyLabel, formatEuro, formatTime, PRESETS, scopeLine, type MandateSpec } from '../catalog.js';
 import { EventLog, eventsHandler } from '../events.js';
 import { escapeHtml, HttpError, listen, readFields, redirect, Router, sendHtml, sendJson, sendText, type Request, type RunningServer } from '../http.js';
@@ -92,6 +96,12 @@ interface RequestRecord {
   agentId: string;
   mandate: Mandate;
   emandate: boolean;
+  /** The client identifier the request was made under: x509_san_dns, or x509_hash under profile it-wallet-1. */
+  clientId: string;
+  /** `it-wallet-1` for requests shaped for the IT-Wallet remote flow (simulated in the sandbox). */
+  profile?: 'it-wallet-1';
+  /** Every claim the request asks for, with its purpose. */
+  disclosure: ClaimDisclosure[];
   requestObject: string;
   params: Record<string, unknown>;
   state: 'pending' | 'active' | 'refused' | 'failed';
@@ -157,6 +167,8 @@ export function parseAgentJwk(x: unknown): JWK {
 
 export interface PlatformService extends RunningServer {
   clientId: string;
+  /** The x509_hash client identifier of the same certificate, used under profile it-wallet-1. */
+  itClientId: string;
   publicUrl: string;
   /** Public key that signs the mandate status list: the bank configures it in mandateStatusTrust. */
   statusSigner: TrustedIssuer;
@@ -227,6 +239,8 @@ export async function startPlatform(opts: PlatformOptions): Promise<PlatformServ
   const events = new EventLog('platform');
   const clientDns = new URL(opts.origin).hostname;
   const clientId = `x509_san_dns:${clientDns}`;
+  // Profile it-wallet-1 identifies the platform by the hash of the same certificate (set once the signer is known).
+  let itClientId = '';
 
   let signer = opts.requestSigner;
   let rpAnchorPem: string | undefined = opts.requestSigner ? opts.requestSignerAnchorPem : undefined;
@@ -237,6 +251,7 @@ export async function startPlatform(opts: PlatformOptions): Promise<PlatformServ
     signer = { key: leaf.privateKey as unknown as CryptoKey, x5c: leaf.x5c };
     rpAnchorPem = rpCa.anchorPem;
   }
+  itClientId = x509HashClientId(signer.x5c![0]);
 
   const statusKeys = await generateKeyPair('ES256', { extractable: true });
   const statusJwk = await exportJWK(statusKeys.publicKey);
@@ -274,7 +289,7 @@ export async function startPlatform(opts: PlatformOptions): Promise<PlatformServ
   async function createRequest(
     agentName: string,
     spec: MandateSpec,
-    o: { agentJwk?: JWK; emandate?: boolean; disclose?: string[] } = {},
+    o: { agentJwk?: JWK; emandate?: boolean; disclose?: string[]; profile?: 'it-wallet-1' } = {},
   ): Promise<RequestRecord> {
     const agent = await newAgent(agentName, o.agentJwk);
     const status = publisher.allocate();
@@ -289,12 +304,15 @@ export async function startPlatform(opts: PlatformOptions): Promise<PlatformServ
       status,
     });
     const id = randomUUID();
+    const it = o.profile === 'it-wallet-1';
     const req = await createMandateRequest({
       mandate,
-      clientId,
+      clientId: it ? itClientId : clientId,
       responseUri: `${publicUrl}/response/${id}`,
-      disclose: o.disclose ?? ['given_name', 'family_name', 'birthdate'],
-      encryptResponse: opts.encryptResponse ?? true,
+      disclose: o.disclose ?? (it ? [...IT_WALLET_DEFAULT_CLAIMS, 'birthdate'] : ['given_name', 'family_name', 'birthdate']),
+      claimPurposes: { birthdate: 'The bank matches the person to the account holder.' },
+      // Profile it-wallet-1 (simulated): Italian PID type, encrypted response, a purpose for every claim.
+      ...(it ? { pidVcts: [IT_WALLET_PID_VCT], requireClaimPurposes: true, encryptResponse: true } : { encryptResponse: opts.encryptResponse ?? true }),
       signer,
       // TS12 e-mandate, bound to the PID: the wallet shows a TS12 summary whose reference_number binds the
       // mandate by hash and whose purpose spells it out. TS12 itself binds e-mandates to an SCA attestation.
@@ -306,6 +324,9 @@ export async function startPlatform(opts: PlatformOptions): Promise<PlatformServ
       agentId: agent.id,
       mandate,
       emandate: Boolean(o.emandate),
+      clientId: it ? itClientId : clientId,
+      ...(it ? { profile: 'it-wallet-1' as const } : {}),
+      disclosure: req.disclosure,
       requestObject: req.requestObject!,
       params: req.params,
       state: 'pending',
@@ -320,6 +341,8 @@ export async function startPlatform(opts: PlatformOptions): Promise<PlatformServ
       agent: agent.name,
       scope: scopeLine(mandate),
       purpose: mandate.purpose,
+      ...(it ? { profile: 'it-wallet-1 (simulated)' } : {}),
+      claims: req.disclosure.map((d) => (d.purpose ? `${d.claim}: ${d.purpose}` : d.claim)),
     });
     return record;
   }
@@ -327,11 +350,11 @@ export async function startPlatform(opts: PlatformOptions): Promise<PlatformServ
 
   function requestLinks(r: RequestRecord) {
     const requestUri = `${publicUrl}/request/${r.id}`;
-    const authorizationUrl = authorizationRequestUrl(clientId, requestUri);
+    const authorizationUrl = authorizationRequestUrl(r.clientId, requestUri);
     // The EUDI reference apps also answer their own scheme; Android matches its intent filter on a host.
-    const eudiUrl = authorizationRequestUrl(clientId, requestUri, 'eudi-openid4vp://authorize');
+    const eudiUrl = authorizationRequestUrl(r.clientId, requestUri, 'eudi-openid4vp://authorize');
     const walletLink = opts.walletUrl
-      ? `${opts.walletUrl}/authorize?${new URLSearchParams({ client_id: clientId, request_uri: requestUri })}`
+      ? `${opts.walletUrl}/authorize?${new URLSearchParams({ client_id: r.clientId, request_uri: requestUri })}`
       : undefined;
     return { request_uri: requestUri, authorization_url: authorizationUrl, eudi_wallet_url: eudiUrl, wallet_url: walletLink };
   }
@@ -344,6 +367,8 @@ export async function startPlatform(opts: PlatformOptions): Promise<PlatformServ
       agent_id: r.agentId,
       error: r.error,
       expires_at: new Date(r.expiresAt * 1000).toISOString(),
+      ...(r.profile ? { profile: r.profile } : {}),
+      claims: r.disclosure,
       ...requestLinks(r),
     };
   }
@@ -410,6 +435,8 @@ export async function startPlatform(opts: PlatformOptions): Promise<PlatformServ
         sessions: stores.responseSessions,
         // TS12 e-mandate roots are experimental and opt-in; the sandbox accepts them bound to the PID.
         emandate: { allowPidBinding: true },
+        // EU PIDs, and the simulated Italian-style PIDs of profile it-wallet-1.
+        acceptedVcts: [PID_VCT, IT_WALLET_PID_VCT],
       });
       r.state = 'active';
       const record: MandateRecord = {
@@ -587,9 +614,12 @@ export async function startPlatform(opts: PlatformOptions): Promise<PlatformServ
       if (body.transaction_data_type !== undefined && body.transaction_data_type !== 'plenipo_mandate' && body.transaction_data_type !== 'emandate') {
         throw new HttpError(400, 'transaction_data_type must be plenipo_mandate or emandate');
       }
+      if (body.profile !== undefined && body.profile !== 'it-wallet-1') throw new HttpError(400, 'profile must be it-wallet-1');
+      if (body.profile === 'it-wallet-1' && body.transaction_data_type === 'emandate') throw new HttpError(400, 'profile it-wallet-1 uses plenipo_mandate');
       r = await createRequest(String(body.agent_name ?? 'Assistant'), spec, {
         agentJwk: body.agent_jwk === undefined ? undefined : parseAgentJwk(body.agent_jwk),
         emandate: body.transaction_data_type === 'emandate',
+        ...(body.profile === 'it-wallet-1' ? { profile: 'it-wallet-1' as const } : {}),
       });
     } catch (e) {
       if (e instanceof HttpError) throw e;
@@ -747,5 +777,5 @@ ${rpAnchorPem ? `<p class="muted" style="font-size:13px">A Plenipo build of the 
     });
   }
 
-  return { ...running, clientId, publicUrl, statusSigner, rpAnchorPem, events };
+  return { ...running, clientId, itClientId, publicUrl, statusSigner, rpAnchorPem, events };
 }
