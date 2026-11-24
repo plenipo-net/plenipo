@@ -330,7 +330,7 @@ export interface TestPidProvider {
   statusList?: StatusListPublisher;
   /** Serves the provider's status list, for `statusFetcher`. */
   statusFetcher: StatusFetcher;
-  issuePid(holderJwk: JWK, claims: PidClaims, opts?: { exp?: number; omitIss?: boolean }): Promise<string>;
+  issuePid(holderJwk: JWK, claims: PidClaims, opts?: { exp?: number; omitIss?: boolean; vct?: string }): Promise<string>;
   /** Signs a status list token with this provider's key, for any URI (negative tests). */
   signStatusList(publisher: { uri: string; size?: number }, revoked?: number[]): Promise<string>;
   /** Status reference of the last PID issued. */
@@ -391,7 +391,7 @@ export async function createTestPidProvider(
         ...(o.omitIss ? {} : { iss }),
         iat,
         exp: o.exp ?? iat + 365 * 24 * 3600,
-        vct: opts.vct ?? PID_VCT,
+        vct: o.vct ?? opts.vct ?? PID_VCT,
         cnf: { jwk: holderJwk },
         ...(status ? { status } : {}),
         ...claims,

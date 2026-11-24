@@ -25,7 +25,7 @@ Experimental (`plenipo/experimental`)
   request breaks.
 
 Testing
-- `createTestPidProvider(iss, { vct })` issues PIDs of another type; the test wallet presents the type it
+- `createTestPidProvider(iss, { vct })` and `issuePid(…, { vct })` issue PIDs of another type; the test wallet presents the type it
   holds, and can be restricted to client identifier prefixes (`clientIdPrefixes`) and check `x509_hash`
   against the request object (`checkX509Hash`).
 
