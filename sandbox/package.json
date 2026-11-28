@@ -18,19 +18,19 @@
     "bridge": "npm run build:bridge --silent && node dist/bridge.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^1.7.0",
-    "@modelcontextprotocol/sdk": "^1.32.1",
-    "jose": "^6.2.12",
+    "@anthropic-ai/sdk": "^1.11.0",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "jose": "^6.2.18",
     "plenipo": "file:..",
     "qrcode": "^1.5.4",
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@types/node": "^26.6.5",
+    "@types/node": "^26.6.6",
     "@types/qrcode": "^1.5.6",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
-    "vitest": "^5.0.5"
+    "vitest": "^5.1.1"
   },
   "engines": {
     "node": ">=22"
